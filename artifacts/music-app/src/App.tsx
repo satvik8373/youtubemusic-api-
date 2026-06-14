@@ -8,6 +8,7 @@ import HomePage from "@/pages/home";
 import SearchPage from "@/pages/search";
 import NowPlayingPage from "@/pages/now-playing";
 import PlaylistPage from "@/pages/playlist";
+import { PlayerProvider } from "@/context/player-context";
 
 const queryClient = new QueryClient();
 
@@ -27,11 +28,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Layout>
-            <Router />
-          </Layout>
-        </WouterRouter>
+        <PlayerProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Layout>
+              <Router />
+            </Layout>
+          </WouterRouter>
+        </PlayerProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
