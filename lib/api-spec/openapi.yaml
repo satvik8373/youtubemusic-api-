@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Music app powered by yt-dlp
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: music
+    description: Music search, info and streaming
 paths:
   /healthz:
     get:
@@ -24,6 +26,226 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /search:
+    get:
+      operationId: searchTracks
+      tags: [music]
+      summary: Search for tracks
+      description: Search for music tracks using yt-dlp
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+          description: Max number of results
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Track"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /track/{videoId}:
+    get:
+      operationId: getTrack
+      tags: [music]
+      summary: Get track info
+      description: Get detailed metadata for a track by video ID
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Track info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackDetail"
+        "404":
+          description: Track not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /trending:
+    get:
+      operationId: getTrending
+      tags: [music]
+      summary: Get trending music
+      description: Returns trending music tracks from YouTube Music charts
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Trending tracks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Track"
+
+  /related/{videoId}:
+    get:
+      operationId: getRelated
+      tags: [music]
+      summary: Get related tracks
+      description: Get tracks related to a given video
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Related tracks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Track"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /stream-url/{videoId}:
+    get:
+      operationId: getStreamUrl
+      tags: [music]
+      summary: Get audio stream URL
+      description: Resolves and returns a direct audio stream URL for a video
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stream URL info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamUrlResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /formats/{videoId}:
+    get:
+      operationId: getFormats
+      tags: [music]
+      summary: List available audio formats
+      description: Returns all available audio formats for a video
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available formats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AudioFormat"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /playlist/{playlistId}:
+    get:
+      operationId: getPlaylist
+      tags: [music]
+      summary: Get playlist
+      description: Returns all tracks in a YouTube playlist
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Playlist info with tracks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Playlist"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /subtitles/{videoId}:
+    get:
+      operationId: getSubtitles
+      tags: [music]
+      summary: Get available subtitles/captions
+      description: Returns list of available subtitle languages for a video
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available subtitles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubtitlesResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +256,181 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Track:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        uploader:
+          type: ["string", "null"]
+        thumbnailUrl:
+          type: ["string", "null"]
+        duration:
+          type: ["integer", "null"]
+        viewCount:
+          type: ["integer", "null"]
+        likeCount:
+          type: ["integer", "null"]
+        uploadDate:
+          type: ["string", "null"]
+        webpage_url:
+          type: string
+      required:
+        - id
+        - title
+        - webpage_url
+
+    TrackDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        uploader:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        thumbnailUrl:
+          type: ["string", "null"]
+        duration:
+          type: ["integer", "null"]
+        viewCount:
+          type: ["integer", "null"]
+        likeCount:
+          type: ["integer", "null"]
+        commentCount:
+          type: ["integer", "null"]
+        uploadDate:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        categories:
+          type: array
+          items:
+            type: string
+        webpage_url:
+          type: string
+        channelId:
+          type: ["string", "null"]
+        channelUrl:
+          type: ["string", "null"]
+      required:
+        - id
+        - title
+        - webpage_url
+        - tags
+        - categories
+
+    StreamUrlResult:
+      type: object
+      properties:
+        videoId:
+          type: string
+        url:
+          type: string
+        ext:
+          type: string
+        acodec:
+          type: ["string", "null"]
+        abr:
+          type: ["number", "null"]
+        expiry:
+          type: ["string", "null"]
+      required:
+        - videoId
+        - url
+        - ext
+
+    AudioFormat:
+      type: object
+      properties:
+        formatId:
+          type: string
+        ext:
+          type: string
+        acodec:
+          type: ["string", "null"]
+        abr:
+          type: ["number", "null"]
+        asr:
+          type: ["integer", "null"]
+        filesize:
+          type: ["integer", "null"]
+        url:
+          type: string
+        note:
+          type: ["string", "null"]
+      required:
+        - formatId
+        - ext
+        - url
+
+    Playlist:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        uploader:
+          type: ["string", "null"]
+        thumbnailUrl:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        trackCount:
+          type: integer
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Track"
+      required:
+        - id
+        - title
+        - trackCount
+        - tracks
+
+    SubtitleLanguage:
+      type: object
+      properties:
+        language:
+          type: string
+        name:
+          type: string
+        ext:
+          type: string
+      required:
+        - language
+        - name
+        - ext
+
+    SubtitlesResult:
+      type: object
+      properties:
+        videoId:
+          type: string
+        subtitles:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubtitleLanguage"
+        automatic:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubtitleLanguage"
+      required:
+        - videoId
+        - subtitles
+        - automatic
