@@ -17,6 +17,7 @@ import type {
 
 import type {
   AudioFormat,
+  CookiesStatus,
   ErrorResponse,
   GetTrendingParams,
   HealthStatus,
@@ -666,6 +667,84 @@ export function useGetPlaylist<TData = Awaited<ReturnType<typeof getPlaylist>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPlaylistQueryOptions(playlistId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetCookiesStatusUrl = () => {
+
+
+
+
+  return `/api/cookies/status`
+}
+
+/**
+ * Returns whether YouTube cookies have been uploaded to the server
+ * @summary Get cookies upload status
+ */
+export const getCookiesStatus = async ( options?: RequestInit): Promise<CookiesStatus> => {
+
+  return customFetch<CookiesStatus>(getGetCookiesStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCookiesStatusQueryKey = () => {
+    return [
+    `/api/cookies/status`
+    ] as const;
+    }
+
+
+export const getGetCookiesStatusQueryOptions = <TData = Awaited<ReturnType<typeof getCookiesStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCookiesStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCookiesStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCookiesStatus>>> = ({ signal }) => getCookiesStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCookiesStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCookiesStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getCookiesStatus>>>
+export type GetCookiesStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get cookies upload status
+ */
+
+export function useGetCookiesStatus<TData = Awaited<ReturnType<typeof getCookiesStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCookiesStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCookiesStatusQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

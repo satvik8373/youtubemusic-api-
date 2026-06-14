@@ -220,6 +220,20 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /cookies/status:
+    get:
+      operationId: getCookiesStatus
+      tags: [music]
+      summary: Get cookies upload status
+      description: Returns whether YouTube cookies have been uploaded to the server
+      responses:
+        "200":
+          description: Cookies status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CookiesStatus"
+
   /subtitles/{videoId}:
     get:
       operationId: getSubtitles
@@ -416,6 +430,16 @@ components:
         - language
         - name
         - ext
+
+    CookiesStatus:
+      type: object
+      properties:
+        hasCookies:
+          type: boolean
+        message:
+          type: string
+      required:
+        - hasCookies
 
     SubtitlesResult:
       type: object

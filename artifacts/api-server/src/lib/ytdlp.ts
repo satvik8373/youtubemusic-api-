@@ -1,7 +1,11 @@
 import { spawn } from "child_process";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { logger } from "./logger";
 
 const YTDLP_BIN = process.env.YTDLP_BIN ?? "yt-dlp";
+export const COOKIES_FILE = path.join(os.tmpdir(), "yt-cookies.txt");
 
 function runYtDlp(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -298,6 +302,41 @@ export async function getPlaylist(playlistId: string): Promise<YtPlaylist> {
     trackCount: entries.length,
     tracks: entries.slice(0, 50).map(mapFlatTrack),
   };
+}
+
+export async function downloadAudio(
+  videoId: string
+): Promise<{ filePath: string; tmpDir: string; filename: string }> {
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "ytdl-"));
+  const args = [
+    `https://www.youtube.com/watch?v=${videoId}`,
+    "-f",
+    "bestaudio",
+    "-x",
+    "--audio-format",
+    "mp3",
+    "-o",
+    path.join(tmpDir, "%(title)s.%(ext)s"),
+    "--no-playlist",
+    "--no-warnings",
+    "--quiet",
+  ];
+
+  const cookiesExist = await fs.promises
+    .access(COOKIES_FILE)
+    .then(() => true)
+    .catch(() => false);
+  if (cookiesExist) {
+    args.push("--cookies", COOKIES_FILE);
+  }
+
+  await runYtDlp(args);
+
+  const files = await fs.promises.readdir(tmpDir);
+  const mp3 = files.find((f) => f.endsWith(".mp3")) ?? files[0];
+  if (!mp3) throw new Error("No file was generated");
+
+  return { filePath: path.join(tmpDir, mp3), tmpDir, filename: mp3 };
 }
 
 export async function getSubtitles(videoId: string): Promise<YtSubtitlesResult> {

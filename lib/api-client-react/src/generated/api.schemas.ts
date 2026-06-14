@@ -106,6 +106,11 @@ export interface SubtitleLanguage {
   ext: string;
 }
 
+export interface CookiesStatus {
+  hasCookies: boolean;
+  message?: string;
+}
+
 export interface SubtitlesResult {
   videoId: string;
   subtitles: SubtitleLanguage[];

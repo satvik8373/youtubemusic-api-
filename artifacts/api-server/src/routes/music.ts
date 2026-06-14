@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import fs from "fs";
 import {
   SearchTracksQueryParams,
   GetTrackParams,
@@ -26,6 +27,8 @@ import {
   getFormats,
   getPlaylist,
   getSubtitles,
+  downloadAudio,
+  COOKIES_FILE,
 } from "../lib/ytdlp";
 
 const router: IRouter = Router();
@@ -153,6 +156,83 @@ router.get("/subtitles/:videoId", async (req, res): Promise<void> => {
   } catch (err) {
     req.log.error({ err }, "Get subtitles failed");
     res.status(404).json({ error: "Subtitles not found" });
+  }
+});
+
+router.get("/cookies/status", async (_req, res): Promise<void> => {
+  const hasCookies = await fs.promises
+    .access(COOKIES_FILE)
+    .then(() => true)
+    .catch(() => false);
+  res.json({
+    hasCookies,
+    message: hasCookies
+      ? "YouTube cookies are active — downloads enabled."
+      : "No cookies uploaded. Downloads require YouTube authentication.",
+  });
+});
+
+router.post("/cookies", async (req, res): Promise<void> => {
+  const { content } = req.body as { content?: string };
+  if (!content || typeof content !== "string" || content.trim().length === 0) {
+    res.status(400).json({ error: "Missing cookies content" });
+    return;
+  }
+  try {
+    await fs.promises.writeFile(COOKIES_FILE, content, "utf-8");
+    res.json({ ok: true, message: "Cookies saved. Downloads are now enabled." });
+  } catch (err) {
+    req.log.error({ err }, "Failed to save cookies");
+    res.status(500).json({ error: "Failed to save cookies" });
+  }
+});
+
+router.delete("/cookies", async (_req, res): Promise<void> => {
+  try {
+    await fs.promises.unlink(COOKIES_FILE).catch(() => {});
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Failed to delete cookies");
+    res.status(500).json({ error: "Failed to delete cookies" });
+  }
+});
+
+router.get("/download/:videoId", async (req, res): Promise<void> => {
+  const { videoId } = req.params;
+  if (!videoId || !/^[a-zA-Z0-9_-]{5,20}$/.test(videoId)) {
+    res.status(400).json({ error: "Invalid video ID" });
+    return;
+  }
+
+  req.log.info({ videoId }, "Starting audio download");
+
+  try {
+    const { filePath, tmpDir, filename } = await downloadAudio(videoId);
+    const safe = encodeURIComponent(filename.replace(/[^\w\s.-]/g, "_"));
+    res.setHeader("Content-Disposition", `attachment; filename="${safe}"`);
+    res.setHeader("Content-Type", "audio/mpeg");
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+    stream.on("end", () => {
+      fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    });
+    stream.on("error", (err) => {
+      req.log.error({ err }, "Stream error during download");
+      if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+      fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    });
+  } catch (err) {
+    const hasCookies = await fs.promises
+      .access(COOKIES_FILE)
+      .then(() => true)
+      .catch(() => false);
+    req.log.warn({ err, hasCookies }, "Download failed");
+    res.status(500).json({
+      error: hasCookies
+        ? "Download failed. YouTube may have blocked this request."
+        : "Download requires YouTube cookies. Upload cookies.txt in the Download tab.",
+      needsCookies: !hasCookies,
+    });
   }
 });
 

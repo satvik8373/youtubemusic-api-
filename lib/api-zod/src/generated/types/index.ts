@@ -7,6 +7,7 @@
  */
 
 export * from './audioFormat';
+export * from './cookiesStatus';
 export * from './errorResponse';
 export * from './getTrendingParams';
 export * from './healthStatus';

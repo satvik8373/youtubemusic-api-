@@ -184,6 +184,16 @@ export const GetPlaylistResponse = zod.object({
 
 
 /**
+ * Returns whether YouTube cookies have been uploaded to the server
+ * @summary Get cookies upload status
+ */
+export const GetCookiesStatusResponse = zod.object({
+  "hasCookies": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
  * Returns list of available subtitle languages for a video
  * @summary Get available subtitles/captions
  */
