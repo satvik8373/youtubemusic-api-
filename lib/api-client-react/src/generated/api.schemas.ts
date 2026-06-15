@@ -111,6 +111,24 @@ export interface CookiesStatus {
   message?: string;
 }
 
+export interface LrcLine {
+  time: number;
+  text: string;
+}
+
+export interface LyricsResult {
+  found: boolean;
+  /** @nullable */
+  source?: string | null;
+  /** @nullable */
+  trackName?: string | null;
+  /** @nullable */
+  artistName?: string | null;
+  /** @nullable */
+  plainLyrics?: string | null;
+  syncedLyrics?: LrcLine[] | null;
+}
+
 export interface SubtitlesResult {
   videoId: string;
   subtitles: SubtitleLanguage[];
@@ -130,5 +148,10 @@ limit?: number;
 
 export type GetTrendingParams = {
 limit?: number;
+};
+
+export type GetLyricsParams = {
+title?: string;
+artist?: string;
 };
 

@@ -19,8 +19,10 @@ import type {
   AudioFormat,
   CookiesStatus,
   ErrorResponse,
+  GetLyricsParams,
   GetTrendingParams,
   HealthStatus,
+  LyricsResult,
   Playlist,
   SearchTracksParams,
   StreamUrlResult,
@@ -745,6 +747,96 @@ export function useGetCookiesStatus<TData = Awaited<ReturnType<typeof getCookies
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCookiesStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetLyricsUrl = (videoId: string,
+    params?: GetLyricsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/lyrics/${videoId}?${stringifiedParams}` : `/api/lyrics/${videoId}`
+}
+
+/**
+ * Searches LRCLib for plain + time-synced lyrics using title and artist
+ * @summary Fetch lyrics for a track
+ */
+export const getLyrics = async (videoId: string,
+    params?: GetLyricsParams, options?: RequestInit): Promise<LyricsResult> => {
+
+  return customFetch<LyricsResult>(getGetLyricsUrl(videoId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLyricsQueryKey = (videoId: string,
+    params?: GetLyricsParams,) => {
+    return [
+    `/api/lyrics/${videoId}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetLyricsQueryOptions = <TData = Awaited<ReturnType<typeof getLyrics>>, TError = ErrorType<unknown>>(videoId: string,
+    params?: GetLyricsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLyrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLyricsQueryKey(videoId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLyrics>>> = ({ signal }) => getLyrics(videoId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(videoId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLyrics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLyricsQueryResult = NonNullable<Awaited<ReturnType<typeof getLyrics>>>
+export type GetLyricsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Fetch lyrics for a track
+ */
+
+export function useGetLyrics<TData = Awaited<ReturnType<typeof getLyrics>>, TError = ErrorType<unknown>>(
+ videoId: string,
+    params?: GetLyricsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLyrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLyricsQueryOptions(videoId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

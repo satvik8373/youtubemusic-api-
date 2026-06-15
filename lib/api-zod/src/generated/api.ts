@@ -194,6 +194,32 @@ export const GetCookiesStatusResponse = zod.object({
 
 
 /**
+ * Searches LRCLib for plain + time-synced lyrics using title and artist
+ * @summary Fetch lyrics for a track
+ */
+export const GetLyricsParams = zod.object({
+  "videoId": zod.coerce.string()
+})
+
+export const GetLyricsQueryParams = zod.object({
+  "title": zod.coerce.string().optional(),
+  "artist": zod.coerce.string().optional()
+})
+
+export const GetLyricsResponse = zod.object({
+  "found": zod.boolean(),
+  "source": zod.string().nullish(),
+  "trackName": zod.string().nullish(),
+  "artistName": zod.string().nullish(),
+  "plainLyrics": zod.string().nullish(),
+  "syncedLyrics": zod.array(zod.object({
+  "time": zod.number(),
+  "text": zod.string()
+})).nullish()
+})
+
+
+/**
  * Returns list of available subtitle languages for a video
  * @summary Get available subtitles/captions
  */

@@ -3,13 +3,14 @@ import {
   useGetTrack,
   useGetRelated,
   useGetSubtitles,
+  useGetLyrics,
 } from "@workspace/api-client-react";
 import {
   Play, Pause, Volume2, VolumeX, SkipBack, SkipForward,
   Loader2, ListVideo, Download, Captions, ExternalLink, Copy, Check,
-  Cookie, Trash2, AlertCircle, CheckCircle2,
+  Cookie, Trash2, AlertCircle, CheckCircle2, Music2,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { formatDuration, formatNumber } from "@/lib/format";
 import { TrackCard } from "@/components/TrackCard";
 import { Slider } from "@/components/ui/slider";
@@ -201,6 +202,121 @@ function DownloadSection({ videoId, trackTitle }: { videoId: string; trackTitle:
   );
 }
 
+function LyricsTab({
+  videoId,
+  title,
+  artist,
+  currentTime,
+}: {
+  videoId: string;
+  title?: string;
+  artist?: string;
+  currentTime: number;
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: lyricsData, isLoading } = useGetLyrics(videoId, { title, artist }, {
+    query: { enabled: !!videoId, staleTime: 10 * 60 * 1000 } as any,
+  });
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<HTMLDivElement>(null);
+
+  const activeIndex = useMemo(() => {
+    if (!lyricsData?.syncedLyrics?.length) return -1;
+    let idx = -1;
+    for (let i = 0; i < lyricsData.syncedLyrics.length; i++) {
+      if ((lyricsData.syncedLyrics[i]?.time ?? Infinity) <= currentTime) idx = i;
+      else break;
+    }
+    return idx;
+  }, [lyricsData?.syncedLyrics, currentTime]);
+
+  useEffect(() => {
+    if (activeRef.current && containerRef.current) {
+      activeRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [activeIndex]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center pt-16 gap-3">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        <p className="text-xs text-muted-foreground">Searching for lyrics…</p>
+      </div>
+    );
+  }
+
+  if (!lyricsData?.found) {
+    return (
+      <div className="flex flex-col items-center justify-center pt-16 gap-3 text-muted-foreground">
+        <Music2 className="w-8 h-8 opacity-40" />
+        <p className="text-sm">No lyrics found</p>
+        <p className="text-xs opacity-60">LRCLib couldn't match this track</p>
+      </div>
+    );
+  }
+
+  if (lyricsData.syncedLyrics?.length) {
+    return (
+      <div ref={containerRef} className="py-6 px-4 space-y-0.5 select-none">
+        {lyricsData.trackName && (
+          <div className="mb-5 pb-4 border-b border-border/40">
+            <p className="text-xs text-muted-foreground">
+              <span className="text-foreground font-medium">{lyricsData.trackName}</span>
+              {lyricsData.artistName && <> · {lyricsData.artistName}</>}
+            </p>
+          </div>
+        )}
+        {lyricsData.syncedLyrics.map((line, i) => {
+          const isActive = i === activeIndex;
+          const isPast = i < activeIndex;
+          return (
+            <div
+              key={i}
+              ref={isActive ? activeRef : undefined}
+              className={`py-1.5 px-2 rounded-lg text-sm leading-snug transition-all duration-300 ${
+                isActive
+                  ? "text-white font-bold text-base scale-105 origin-left bg-primary/10 text-primary drop-shadow-[0_0_8px_rgba(236,72,153,0.6)]"
+                  : isPast
+                    ? "text-muted-foreground/50"
+                    : "text-muted-foreground/80 hover:text-muted-foreground"
+              }`}
+            >
+              {line.text}
+            </div>
+          );
+        })}
+        <div className="h-16" />
+      </div>
+    );
+  }
+
+  if (lyricsData.plainLyrics) {
+    return (
+      <div className="py-6 px-4">
+        {lyricsData.trackName && (
+          <div className="mb-5 pb-4 border-b border-border/40">
+            <p className="text-xs text-muted-foreground">
+              <span className="text-foreground font-medium">{lyricsData.trackName}</span>
+              {lyricsData.artistName && <> · {lyricsData.artistName}</>}
+            </p>
+          </div>
+        )}
+        <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-sans leading-relaxed">
+          {lyricsData.plainLyrics}
+        </pre>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center pt-16 gap-3 text-muted-foreground">
+      <Music2 className="w-8 h-8 opacity-40" />
+      <p className="text-sm">Lyrics unavailable</p>
+    </div>
+  );
+}
+
 export default function NowPlayingPage() {
   const { videoId } = useParams();
   const {
@@ -209,15 +325,20 @@ export default function NowPlayingPage() {
     playNext, playPrev, playTrack, queue, queueIndex,
   } = usePlayer();
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: trackMeta, isLoading: trackLoading } = useGetTrack(videoId ?? "", {
-    query: { enabled: !!videoId },
+    query: { enabled: !!videoId } as any,
   });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: related } = useGetRelated(videoId ?? "", {
-    query: { enabled: !!videoId },
+    query: { enabled: !!videoId } as any,
   });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subtitles } = useGetSubtitles(videoId ?? "", {
-    query: { enabled: !!videoId },
+    query: { enabled: !!videoId } as any,
   });
+  const lyricsTitle = trackMeta?.title;
+  const lyricsArtist = trackMeta?.uploader ?? undefined;
 
   useEffect(() => {
     if (videoId && trackMeta && (!currentTrack || currentTrack.id !== videoId)) {
@@ -377,6 +498,9 @@ export default function NowPlayingPage() {
             <TabsTrigger value="related" className="flex-1 h-full rounded-none data-[state=active]:bg-transparent data-[state=active]:text-primary border-b-2 border-transparent data-[state=active]:border-primary text-xs">
               <ListVideo className="w-3.5 h-3.5 mr-1.5" /> Related
             </TabsTrigger>
+            <TabsTrigger value="lyrics" className="flex-1 h-full rounded-none data-[state=active]:bg-transparent data-[state=active]:text-primary border-b-2 border-transparent data-[state=active]:border-primary text-xs">
+              <Music2 className="w-3.5 h-3.5 mr-1.5" /> Lyrics
+            </TabsTrigger>
             <TabsTrigger value="download" className="flex-1 h-full rounded-none data-[state=active]:bg-transparent data-[state=active]:text-primary border-b-2 border-transparent data-[state=active]:border-primary text-xs">
               <Download className="w-3.5 h-3.5 mr-1.5" /> Download
             </TabsTrigger>
@@ -396,6 +520,15 @@ export default function NowPlayingPage() {
               ) : (
                 <p className="text-muted-foreground text-sm text-center pt-12">No related tracks found.</p>
               )}
+            </TabsContent>
+
+            <TabsContent value="lyrics" className="m-0 outline-none h-full">
+              <LyricsTab
+                videoId={videoId}
+                title={lyricsTitle}
+                artist={lyricsArtist}
+                currentTime={currentTime}
+              />
             </TabsContent>
 
             <TabsContent value="download" className="m-0 p-4 outline-none space-y-6">

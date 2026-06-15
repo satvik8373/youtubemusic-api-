@@ -234,6 +234,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/CookiesStatus"
 
+  /lyrics/{videoId}:
+    get:
+      operationId: getLyrics
+      tags: [music]
+      summary: Fetch lyrics for a track
+      description: Searches LRCLib for plain + time-synced lyrics using title and artist
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: title
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: artist
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lyrics result (found or not found)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LyricsResult"
+
   /subtitles/{videoId}:
     get:
       operationId: getSubtitles
@@ -440,6 +470,38 @@ components:
           type: string
       required:
         - hasCookies
+
+    LrcLine:
+      type: object
+      properties:
+        time:
+          type: number
+        text:
+          type: string
+      required:
+        - time
+        - text
+
+    LyricsResult:
+      type: object
+      properties:
+        found:
+          type: boolean
+        source:
+          type: ["string", "null"]
+        trackName:
+          type: ["string", "null"]
+        artistName:
+          type: ["string", "null"]
+        plainLyrics:
+          type: ["string", "null"]
+        syncedLyrics:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/LrcLine"
+      required:
+        - found
 
     SubtitlesResult:
       type: object

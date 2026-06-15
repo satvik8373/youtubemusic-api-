@@ -145,6 +145,71 @@ router.get("/playlist/:playlistId", async (req, res): Promise<void> => {
   }
 });
 
+router.get("/lyrics/:videoId", async (req, res): Promise<void> => {
+  const { videoId } = req.params;
+  if (!videoId) { res.status(400).json({ error: "Missing videoId" }); return; }
+
+  const { title, artist } = req.query as { title?: string; artist?: string };
+
+  const cleanTitle = (t: string) =>
+    t.replace(/\s*[\(\[][^)\]]*?(official|mv|m\/v|video|lyric|audio|hd|4k|remaster)[^)\]]*[\)\]]/gi, "")
+      .replace(/\s*[\(\[][^)\]]*[\)\]]/g, "")
+      .trim();
+
+  function parseSyncedLyrics(lrc: string): { time: number; text: string }[] {
+    const result: { time: number; text: string }[] = [];
+    for (const line of lrc.split("\n")) {
+      const m = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/);
+      if (m) {
+        const time = parseInt(m[1]) * 60 + parseInt(m[2]) + parseInt(m[3].padEnd(3, "0")) / 1000;
+        const text = m[4].trim();
+        if (text) result.push({ time, text });
+      }
+    }
+    return result;
+  }
+
+  try {
+    const searchTitle = title ? cleanTitle(title) : videoId;
+    const params = new URLSearchParams({ q: searchTitle });
+    if (artist) params.set("artist_name", artist);
+
+    const response = await fetch(`https://lrclib.net/api/search?${params}`, {
+      headers: { "User-Agent": "sonic-music-app/1.0 (https://github.com/sonic)" },
+    });
+
+    if (!response.ok) {
+      res.json({ found: false, source: null, trackName: null, artistName: null, plainLyrics: null, syncedLyrics: null });
+      return;
+    }
+
+    const results = (await response.json()) as Array<{
+      trackName: string;
+      artistName: string;
+      plainLyrics: string | null;
+      syncedLyrics: string | null;
+    }>;
+
+    if (!results.length) {
+      res.json({ found: false, source: null, trackName: null, artistName: null, plainLyrics: null, syncedLyrics: null });
+      return;
+    }
+
+    const best = results[0];
+    res.json({
+      found: true,
+      source: "lrclib",
+      trackName: best.trackName,
+      artistName: best.artistName,
+      plainLyrics: best.plainLyrics ?? null,
+      syncedLyrics: best.syncedLyrics ? parseSyncedLyrics(best.syncedLyrics) : null,
+    });
+  } catch (err) {
+    req.log.warn({ err }, "Lyrics fetch failed");
+    res.json({ found: false, source: null, trackName: null, artistName: null, plainLyrics: null, syncedLyrics: null });
+  }
+});
+
 router.get("/subtitles/:videoId", async (req, res): Promise<void> => {
   const params = GetSubtitlesParams.safeParse(req.params);
   if (!params.success) {
