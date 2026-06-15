@@ -2,7 +2,7 @@ import { usePlayer } from "@/context/player-context";
 import { useLocation } from "wouter";
 import {
   Play, Pause, SkipBack, SkipForward,
-  Volume2, VolumeX, Loader2, ListMusic,
+  Volume2, VolumeX, Loader2, ListMusic, WifiOff,
 } from "lucide-react";
 import { formatDuration } from "@/lib/format";
 import { Slider } from "@/components/ui/slider";

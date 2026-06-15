@@ -7,6 +7,42 @@ import { logger } from "./logger";
 const YTDLP_BIN = process.env.YTDLP_BIN ?? "yt-dlp";
 export const COOKIES_FILE = path.join(os.tmpdir(), "yt-cookies.txt");
 
+interface CachedStreamUrl {
+  url: string;
+  expiresAt: number;
+}
+const streamUrlCache = new Map<string, CachedStreamUrl>();
+
+export async function getDirectStreamUrl(videoId: string, format = "bestaudio"): Promise<string> {
+  const cacheKey = `${videoId}:${format}`;
+  const cached = streamUrlCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
+
+  const cookiesExist = await fs.promises
+    .access(COOKIES_FILE)
+    .then(() => true)
+    .catch(() => false);
+  if (!cookiesExist) throw new Error("NO_COOKIES");
+
+  const args = [
+    `https://www.youtube.com/watch?v=${videoId}`,
+    "-f",
+    format,
+    "--get-url",
+    "--no-warnings",
+    "--quiet",
+    "--cookies",
+    COOKIES_FILE,
+  ];
+
+  const output = await runYtDlp(args);
+  const url = output.trim().split("\n")[0];
+  if (!url || !url.startsWith("http")) throw new Error("No valid stream URL returned");
+
+  streamUrlCache.set(cacheKey, { url, expiresAt: Date.now() + 60 * 60 * 1000 });
+  return url;
+}
+
 function runYtDlp(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     logger.debug({ args }, "Running yt-dlp");

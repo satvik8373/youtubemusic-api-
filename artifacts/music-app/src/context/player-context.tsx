@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+} from "react";
 
 export interface PlayerTrack {
   id: string;
@@ -22,6 +29,7 @@ interface PlayerContextValue {
   isMuted: boolean;
   isReady: boolean;
   isBuffering: boolean;
+  streamMode: "direct" | "unavailable";
   playTrack: (track: PlayerTrack, newQueue?: PlayerTrack[]) => void;
   togglePlay: () => void;
   seekTo: (seconds: number) => void;
@@ -30,44 +38,6 @@ interface PlayerContextValue {
   playNext: () => void;
   playPrev: () => void;
   addToQueue: (track: PlayerTrack) => void;
-}
-
-declare global {
-  interface Window {
-    YT: typeof YT;
-    onYouTubeIframeAPIReady: () => void;
-    _ytApiLoading: boolean;
-  }
-}
-
-declare namespace YT {
-  class Player {
-    constructor(elementId: string | HTMLElement, options: PlayerOptions);
-    playVideo(): void;
-    pauseVideo(): void;
-    loadVideoById(videoId: string): void;
-    seekTo(seconds: number, allowSeekAhead: boolean): void;
-    setVolume(volume: number): void;
-    mute(): void;
-    unMute(): void;
-    isMuted(): boolean;
-    getVolume(): number;
-    getCurrentTime(): number;
-    getDuration(): number;
-    getPlayerState(): number;
-    destroy(): void;
-  }
-  interface PlayerOptions {
-    videoId?: string;
-    height?: string | number;
-    width?: string | number;
-    playerVars?: Record<string, unknown>;
-    events?: {
-      onReady?: () => void;
-      onStateChange?: (e: { data: number }) => void;
-      onError?: (e: { data: number }) => void;
-    };
-  }
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -89,162 +59,110 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [streamMode, setStreamMode] = useState<"direct" | "unavailable">("unavailable");
 
-  const playerRef = useRef<YT.Player | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const queueRef = useRef<PlayerTrack[]>([]);
   const queueIndexRef = useRef(-1);
-  const pendingVideoRef = useRef<string | null>(null);
-  const playerReadyRef = useRef(false);
   const volumeRef = useRef(80);
 
-  const startTimer = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      if (playerRef.current) {
-        setCurrentTime(playerRef.current.getCurrentTime());
-        const d = playerRef.current.getDuration();
-        if (d > 0) setDuration(d);
-      }
-    }, 500);
-  }, []);
+  useEffect(() => {
+    const audio = new Audio();
+    audio.volume = volumeRef.current / 100;
+    audioRef.current = audio;
 
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  const onPlayerReady = useCallback(() => {
-    playerReadyRef.current = true;
-    setIsReady(true);
-    if (playerRef.current) {
-      setDuration(playerRef.current.getDuration());
-      playerRef.current.setVolume(volumeRef.current);
-    }
-    if (pendingVideoRef.current) {
-      playerRef.current?.loadVideoById(pendingVideoRef.current);
-      pendingVideoRef.current = null;
-    }
-  }, []);
-
-  const onStateChange = useCallback((e: { data: number }) => {
-    const s = e.data;
-    if (s === 1) {
-      setIsPlaying(true);
-      setIsBuffering(false);
-      startTimer();
-    } else if (s === 2) {
-      setIsPlaying(false);
-      stopTimer();
-    } else if (s === 0) {
-      setIsPlaying(false);
-      stopTimer();
-      setCurrentTime(0);
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onDurationChange = () => { if (isFinite(audio.duration)) setDuration(audio.duration); };
+    const onPlay = () => { setIsPlaying(true); setIsBuffering(false); };
+    const onPause = () => setIsPlaying(false);
+    const onWaiting = () => setIsBuffering(true);
+    const onCanPlay = () => { setIsBuffering(false); setIsReady(true); };
+    const onEnded = () => {
       const nextIdx = queueIndexRef.current + 1;
       if (nextIdx < queueRef.current.length) {
-        const nextTrack = queueRef.current[nextIdx];
+        const next = queueRef.current[nextIdx];
         queueIndexRef.current = nextIdx;
         setQueueIndex(nextIdx);
-        setCurrentTrack(nextTrack);
+        setCurrentTrack(next);
+        setCurrentTime(0);
         setDuration(0);
-        playerRef.current?.loadVideoById(nextTrack.id);
-      }
-    } else if (s === 3) {
-      setIsBuffering(true);
-    }
-  }, [startTimer, stopTimer]);
-
-  const createPlayer = useCallback((videoId: string) => {
-    playerRef.current = new window.YT.Player("yt-global-player", {
-      videoId,
-      height: "1",
-      width: "1",
-      playerVars: {
-        autoplay: 1,
-        controls: 0,
-        disablekb: 1,
-        fs: 0,
-        modestbranding: 1,
-        rel: 0,
-        origin: window.location.origin,
-      },
-      events: {
-        onReady: onPlayerReady,
-        onStateChange: onStateChange,
-      },
-    });
-  }, [onPlayerReady, onStateChange]);
-
-  const ensureApiLoaded = useCallback((videoId: string) => {
-    if (window.YT && window.YT.Player) {
-      if (playerRef.current && playerReadyRef.current) {
-        playerRef.current.loadVideoById(videoId);
-      } else if (playerRef.current) {
-        pendingVideoRef.current = videoId;
+        setIsReady(false);
+        setIsBuffering(true);
+        audio.src = `/api/stream/${next.id}`;
+        audio.play().catch(() => {});
       } else {
-        createPlayer(videoId);
+        setIsPlaying(false);
+        setCurrentTime(0);
       }
-    } else {
-      pendingVideoRef.current = videoId;
-      if (!window._ytApiLoading) {
-        window._ytApiLoading = true;
-        window.onYouTubeIframeAPIReady = () => {
-          createPlayer(pendingVideoRef.current!);
-          pendingVideoRef.current = null;
-        };
-        const tag = document.createElement("script");
-        tag.src = "https://www.youtube.com/iframe_api";
-        document.body.appendChild(tag);
-      }
-    }
-  }, [createPlayer]);
+    };
+    const onError = () => {
+      setIsBuffering(false);
+      setIsReady(false);
+      setIsPlaying(false);
+      setStreamMode("unavailable");
+    };
 
-  useEffect(() => {
-    if (!window._ytApiLoading && !window.YT) {
-      window._ytApiLoading = true;
-      window.onYouTubeIframeAPIReady = () => {
-        if (pendingVideoRef.current) {
-          createPlayer(pendingVideoRef.current);
-          pendingVideoRef.current = null;
-        }
-      };
-      const tag = document.createElement("script");
-      tag.id = "yt-iframe-api";
-      tag.src = "https://www.youtube.com/iframe_api";
-      document.body.appendChild(tag);
-    }
-  }, [createPlayer]);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("durationchange", onDurationChange);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("waiting", onWaiting);
+    audio.addEventListener("canplay", onCanPlay);
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError);
+
+    return () => {
+      audio.pause();
+      audio.src = "";
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("durationchange", onDurationChange);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("waiting", onWaiting);
+      audio.removeEventListener("canplay", onCanPlay);
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
+    };
+  }, []);
 
   const playTrack = useCallback((track: PlayerTrack, newQueue?: PlayerTrack[]) => {
     const q = newQueue ?? [track];
-    const idx = q.findIndex((t) => t.id === track.id);
+    const idx = Math.max(0, q.findIndex((t) => t.id === track.id));
     queueRef.current = q;
-    queueIndexRef.current = idx >= 0 ? idx : 0;
+    queueIndexRef.current = idx;
     setQueue(q);
-    setQueueIndex(idx >= 0 ? idx : 0);
+    setQueueIndex(idx);
     setCurrentTrack(track);
     setCurrentTime(0);
     setDuration(0);
     setIsReady(false);
-    setIsPlaying(false);
     setIsBuffering(true);
-    ensureApiLoaded(track.id);
-  }, [ensureApiLoaded]);
+    setIsPlaying(false);
+    setStreamMode("direct");
+
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.src = `/api/stream/${track.id}`;
+    audio.play().catch(() => {
+      setStreamMode("unavailable");
+      setIsBuffering(false);
+    });
+  }, []);
 
   const togglePlay = useCallback(() => {
-    if (!playerRef.current || !playerReadyRef.current) return;
-    if (isPlaying) {
-      playerRef.current.pauseVideo();
+    const audio = audioRef.current;
+    if (!audio || !audio.src) return;
+    if (audio.paused) {
+      audio.play().catch(() => {});
     } else {
-      playerRef.current.playVideo();
+      audio.pause();
     }
-  }, [isPlaying]);
+  }, []);
 
   const seekTo = useCallback((seconds: number) => {
-    if (playerRef.current && playerReadyRef.current) {
-      playerRef.current.seekTo(seconds, true);
+    const audio = audioRef.current;
+    if (audio && isFinite(seconds)) {
+      audio.currentTime = seconds;
       setCurrentTime(seconds);
     }
   }, []);
@@ -252,58 +170,66 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const changeVolume = useCallback((vol: number) => {
     volumeRef.current = vol;
     setVolume(vol);
-    if (playerRef.current && playerReadyRef.current) {
-      playerRef.current.setVolume(vol);
-      if (vol > 0) {
-        playerRef.current.unMute();
-        setIsMuted(false);
-      }
+    const audio = audioRef.current;
+    if (audio) {
+      audio.volume = vol / 100;
+      audio.muted = false;
+      setIsMuted(false);
     }
   }, []);
 
   const toggleMute = useCallback(() => {
-    if (!playerRef.current || !playerReadyRef.current) return;
-    if (isMuted) {
-      playerRef.current.unMute();
-      playerRef.current.setVolume(volumeRef.current || 50);
-      setIsMuted(false);
-    } else {
-      playerRef.current.mute();
-      setIsMuted(true);
-    }
-  }, [isMuted]);
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.muted = !audio.muted;
+    setIsMuted(audio.muted);
+  }, []);
 
   const playNext = useCallback(() => {
     const nextIdx = queueIndexRef.current + 1;
     if (nextIdx < queueRef.current.length) {
-      const nextTrack = queueRef.current[nextIdx];
+      const next = queueRef.current[nextIdx];
       queueIndexRef.current = nextIdx;
       setQueueIndex(nextIdx);
-      setCurrentTrack(nextTrack);
+      setCurrentTrack(next);
       setCurrentTime(0);
       setDuration(0);
       setIsReady(false);
-      playerRef.current?.loadVideoById(nextTrack.id);
+      setIsBuffering(true);
+      setStreamMode("direct");
+      const audio = audioRef.current;
+      if (audio) {
+        audio.src = `/api/stream/${next.id}`;
+        audio.play().catch(() => setStreamMode("unavailable"));
+      }
     }
   }, []);
 
   const playPrev = useCallback(() => {
-    if (currentTime > 3) {
-      seekTo(0);
+    const audio = audioRef.current;
+    if (audio && audio.currentTime > 3) {
+      audio.currentTime = 0;
+      setCurrentTime(0);
       return;
     }
     const prevIdx = queueIndexRef.current - 1;
     if (prevIdx >= 0) {
-      const prevTrack = queueRef.current[prevIdx];
+      const prev = queueRef.current[prevIdx];
       queueIndexRef.current = prevIdx;
       setQueueIndex(prevIdx);
-      setCurrentTrack(prevTrack);
+      setCurrentTrack(prev);
       setCurrentTime(0);
       setDuration(0);
       setIsReady(false);
-      playerRef.current?.loadVideoById(prevTrack.id);
+      setIsBuffering(true);
+      setStreamMode("direct");
+      const audio2 = audioRef.current;
+      if (audio2) {
+        audio2.src = `/api/stream/${prev.id}`;
+        audio2.play().catch(() => setStreamMode("unavailable"));
+      }
     }
-  }, [currentTime, seekTo]);
+  }, []);
 
   const addToQueue = useCallback((track: PlayerTrack) => {
     queueRef.current = [...queueRef.current, track];
@@ -323,6 +249,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         isMuted,
         isReady,
         isBuffering,
+        streamMode,
         playTrack,
         togglePlay,
         seekTo,
@@ -334,9 +261,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-      <div className="absolute opacity-0 pointer-events-none w-px h-px overflow-hidden" style={{ left: -9999, top: -9999 }}>
-        <div id="yt-global-player" />
-      </div>
     </PlayerContext.Provider>
   );
 }

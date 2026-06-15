@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import fs from "fs";
+import { Readable } from "stream";
 import {
   SearchTracksQueryParams,
   GetTrackParams,
@@ -28,6 +29,7 @@ import {
   getPlaylist,
   getSubtitles,
   downloadAudio,
+  getDirectStreamUrl,
   COOKIES_FILE,
 } from "../lib/ytdlp";
 
@@ -156,6 +158,63 @@ router.get("/subtitles/:videoId", async (req, res): Promise<void> => {
   } catch (err) {
     req.log.error({ err }, "Get subtitles failed");
     res.status(404).json({ error: "Subtitles not found" });
+  }
+});
+
+router.get("/stream/:videoId", async (req, res): Promise<void> => {
+  const { videoId } = req.params;
+  if (!videoId || !/^[a-zA-Z0-9_-]{5,20}$/.test(videoId)) {
+    res.status(400).json({ error: "Invalid video ID" });
+    return;
+  }
+
+  try {
+    const streamUrl = await getDirectStreamUrl(videoId);
+
+    const headers: Record<string, string> = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    };
+    if (req.headers.range) {
+      headers["Range"] = req.headers.range;
+    }
+
+    const upstream = await fetch(streamUrl, { headers });
+
+    res.status(upstream.status);
+    for (const h of [
+      "content-type",
+      "content-length",
+      "accept-ranges",
+      "content-range",
+    ]) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "no-store");
+
+    if (upstream.body) {
+      Readable.fromWeb(upstream.body as import("stream/web").ReadableStream).pipe(res);
+    } else {
+      res.end();
+    }
+
+    req.on("close", () => {
+      res.destroy();
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    const needsCookies = msg === "NO_COOKIES";
+    req.log.warn({ err: msg, videoId }, "Stream failed");
+    if (!res.headersSent) {
+      res.status(needsCookies ? 401 : 503).json({
+        error: needsCookies
+          ? "Upload YouTube cookies to enable direct streaming"
+          : "Stream extraction failed — YouTube blocked this request",
+        needsCookies,
+      });
+    }
   }
 });
 
