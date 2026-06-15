@@ -7,7 +7,7 @@ import {
 import {
   Play, Pause, Volume2, VolumeX, SkipBack, SkipForward,
   Loader2, ListVideo, Download, Captions, ExternalLink, Copy, Check,
-  Cookie, Trash2, AlertCircle, CheckCircle2, Wifi, WifiOff,
+  Cookie, Trash2, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { formatDuration, formatNumber } from "@/lib/format";
@@ -30,16 +30,6 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
-  );
-}
-
-function StreamStatusBadge({ streamMode }: { streamMode: "direct" | "unavailable" }) {
-  return (
-    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${streamMode === "direct" ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"}`}>
-      {streamMode === "direct"
-        ? <><Wifi className="w-3 h-3" /> Direct stream</>
-        : <><WifiOff className="w-3 h-3" /> Needs cookies</>}
-    </div>
   );
 }
 
@@ -69,7 +59,7 @@ function CookiesSection({ onSaved }: { onSaved?: () => void }) {
       });
       const d = await r.json() as { ok?: boolean; error?: string };
       if (r.ok) {
-        setMsg("✓ Cookies saved — streaming & downloads now enabled!");
+        setMsg("✓ Cookies saved — downloads now enabled!");
         setHasCookies(true);
         setCookiesText("");
         setOpen(false);
@@ -92,25 +82,20 @@ function CookiesSection({ onSaved }: { onSaved?: () => void }) {
 
   return (
     <div className="space-y-3">
-      {/* Status */}
       <div className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${hasCookies ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"}`}>
         {hasCookies ? <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />}
         <div className="flex-1">
-          <p className="font-semibold">{hasCookies ? "Streaming & downloads enabled" : "Upload cookies to enable streaming"}</p>
+          <p className="font-semibold">{hasCookies ? "Downloads enabled" : "Upload cookies to enable downloads"}</p>
           <p className="text-xs mt-0.5 opacity-80">
-            {hasCookies
-              ? "yt-dlp can extract direct audio URLs — no iframe needed."
-              : "YouTube blocks server IPs without cookies. Upload once to unlock everything."}
+            {hasCookies ? "yt-dlp can download MP3 files for offline use." : "Required for MP3 downloads via yt-dlp."}
           </p>
         </div>
         {hasCookies && (
-          <button onClick={handleDelete} className="text-red-400 hover:text-red-300 p-0.5 flex-shrink-0" title="Remove cookies">
+          <button onClick={handleDelete} className="text-red-400 hover:text-red-300 p-0.5 flex-shrink-0">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
-
-      {/* Toggle */}
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -118,7 +103,6 @@ function CookiesSection({ onSaved }: { onSaved?: () => void }) {
         <Cookie className="w-3.5 h-3.5" />
         {hasCookies ? "Update YouTube cookies" : "Upload YouTube cookies (cookies.txt)"}
       </button>
-
       {open && (
         <div className="space-y-2">
           <div className="p-3 rounded-lg bg-secondary/30 border border-border text-xs text-muted-foreground">
@@ -126,8 +110,8 @@ function CookiesSection({ onSaved }: { onSaved?: () => void }) {
             <ol className="space-y-1 list-decimal list-inside">
               <li>Install <b>"Get cookies.txt LOCALLY"</b> Chrome extension</li>
               <li>Sign into YouTube in your browser</li>
-              <li>Visit youtube.com → click the extension → Export</li>
-              <li>Copy the file content, paste below</li>
+              <li>Visit youtube.com → click extension → Export</li>
+              <li>Paste the file content below</li>
             </ol>
           </div>
           <textarea
@@ -184,7 +168,6 @@ function DownloadSection({ videoId, trackTitle }: { videoId: string; trackTitle:
 
   return (
     <div className="space-y-4">
-      {/* Download button */}
       <button
         onClick={handleDownload}
         disabled={downloading}
@@ -195,8 +178,6 @@ function DownloadSection({ videoId, trackTitle }: { videoId: string; trackTitle:
       {downloadErr && (
         <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs">{downloadErr}</div>
       )}
-
-      {/* Video URL */}
       <div>
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">📺 Video URL</h4>
         <div className="bg-secondary/40 border border-border rounded-xl p-3 flex items-center gap-2">
@@ -209,8 +190,6 @@ function DownloadSection({ videoId, trackTitle }: { videoId: string; trackTitle:
           </div>
         </div>
       </div>
-
-      {/* yt-dlp command */}
       <div>
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">💻 Local download</h4>
         <div className="bg-black/40 border border-border rounded-xl p-3 flex items-start gap-2">
@@ -227,7 +206,7 @@ export default function NowPlayingPage() {
   const {
     currentTrack, isPlaying, isBuffering, isReady, currentTime, duration,
     volume, isMuted, togglePlay, seekTo, changeVolume, toggleMute,
-    playNext, playPrev, playTrack, queue, queueIndex, streamMode,
+    playNext, playPrev, playTrack, queue, queueIndex,
   } = usePlayer();
 
   const { data: trackMeta, isLoading: trackLoading } = useGetTrack(videoId ?? "", {
@@ -261,19 +240,33 @@ export default function NowPlayingPage() {
   const hasNext = queueIndex < queue.length - 1;
   const isCurrentTrack = currentTrack?.id === videoId;
 
+  const bgVideoSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&rel=0&modestbranding=1&playsinline=1&iv_load_policy=3&showinfo=0`;
+
   return (
     <div className="flex h-full flex-col lg:flex-row overflow-hidden bg-background">
-      {/* Main Player Area */}
+      {/* ── Main Player Panel ── */}
       <div className="flex-1 flex flex-col relative overflow-hidden h-full">
-        {/* Ambient background */}
-        {track?.thumbnailUrl && (
-          <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-15">
-            <img src={track.thumbnailUrl} alt="" className="w-full h-full object-cover blur-[120px] scale-150 saturate-200" />
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/20" />
-          </div>
-        )}
 
-        <div className="flex-1 p-6 lg:p-10 z-10 flex flex-col justify-center items-center overflow-y-auto">
+        {/* ── Background: blurred YouTube video (Spotify canvas style) ── */}
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+          <iframe
+            key={videoId}
+            src={bgVideoSrc}
+            allow="autoplay; encrypted-media"
+            className="absolute w-[200%] h-[200%] -top-1/2 -left-1/2"
+            style={{
+              filter: "blur(50px) brightness(0.35) saturate(2)",
+              border: "none",
+            }}
+            tabIndex={-1}
+          />
+          {/* Gradient overlay so text stays readable */}
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-background/30 to-transparent" />
+        </div>
+
+        {/* ── Content ── */}
+        <div className="flex-1 p-6 lg:p-10 z-10 flex flex-col justify-center items-center overflow-y-auto relative">
           {trackLoading && !track ? (
             <div className="flex flex-col items-center animate-pulse">
               <div className="w-64 h-64 md:w-80 md:h-80 bg-secondary rounded-2xl mb-8 shadow-2xl" />
@@ -282,22 +275,23 @@ export default function NowPlayingPage() {
             </div>
           ) : track ? (
             <div className="w-full max-w-lg mx-auto flex flex-col items-center">
+
               {/* Album Art */}
-              <div className="relative w-full max-w-[300px] aspect-square bg-secondary rounded-2xl overflow-hidden mb-6 shadow-[0_20px_60px_rgba(0,0,0,0.6)] border border-white/10 group">
+              <div className="relative w-full max-w-[300px] aspect-square bg-secondary rounded-2xl overflow-hidden mb-6 shadow-[0_20px_60px_rgba(0,0,0,0.7)] border border-white/10 group">
                 <img
                   src={track.thumbnailUrl ?? ""}
                   alt={track.title}
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 />
-                {(isBuffering || (!isReady && isCurrentTrack && streamMode === "direct")) && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                {(isBuffering && isCurrentTrack && !isReady) && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                     <Loader2 className="w-10 h-10 text-primary animate-spin" />
                   </div>
                 )}
               </div>
 
               {/* Track Info */}
-              <div className="text-center mb-2 w-full px-2">
+              <div className="text-center mb-6 w-full px-2">
                 <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2 text-white drop-shadow-md line-clamp-2">
                   {track.title}
                 </h1>
@@ -308,24 +302,8 @@ export default function NowPlayingPage() {
                 </div>
               </div>
 
-              {/* Stream status badge */}
-              <div className="mb-5">
-                <StreamStatusBadge streamMode={streamMode} />
-              </div>
-
-              {/* Stream unavailable — prompt */}
-              {streamMode === "unavailable" && (
-                <div className="w-full mb-5 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
-                  <p className="text-sm text-yellow-400 font-medium mb-1">🔒 Direct streaming unavailable</p>
-                  <p className="text-xs text-yellow-400/70">
-                    YouTube blocks stream extraction from servers without authentication.
-                    Upload your cookies in the <b>Download</b> tab to enable native audio streaming — no iframe, no YouTube player.
-                  </p>
-                </div>
-              )}
-
               {/* Player Card */}
-              <div className="w-full bg-secondary/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
+              <div className="w-full bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
                 {/* Seek Bar */}
                 <div className="flex items-center gap-3 mb-5">
                   <span className="text-xs font-mono text-muted-foreground w-10 text-right tabular-nums">
@@ -337,7 +315,6 @@ export default function NowPlayingPage() {
                     step={1}
                     onValueChange={(v) => v[0] !== undefined && seekTo(v[0])}
                     className="flex-1 cursor-pointer"
-                    disabled={streamMode === "unavailable"}
                   />
                   <span className="text-xs font-mono text-muted-foreground w-10 tabular-nums">
                     {formatDuration(displayDuration)}
@@ -347,7 +324,7 @@ export default function NowPlayingPage() {
                 {/* Controls */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 w-1/3">
-                    <button onClick={toggleMute} className="text-muted-foreground hover:text-white transition-colors" disabled={streamMode === "unavailable"}>
+                    <button onClick={toggleMute} className="text-muted-foreground hover:text-white transition-colors">
                       {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                     </button>
                     <Slider
@@ -363,13 +340,12 @@ export default function NowPlayingPage() {
                     <button onClick={playPrev} disabled={!hasPrev} className="text-muted-foreground hover:text-white transition-colors disabled:opacity-30">
                       <SkipBack className="w-7 h-7 fill-current" />
                     </button>
-
                     <button
                       onClick={togglePlay}
-                      disabled={streamMode === "unavailable" || (!isReady && !isBuffering)}
-                      className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center transition-all shadow-[0_0_30px_rgba(236,72,153,0.4)] hover:shadow-[0_0_40px_rgba(236,72,153,0.6)] hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:shadow-none"
+                      disabled={!isReady && !isBuffering}
+                      className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center transition-all shadow-[0_0_30px_rgba(236,72,153,0.5)] hover:shadow-[0_0_45px_rgba(236,72,153,0.7)] hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:shadow-none"
                     >
-                      {isBuffering && streamMode === "direct" ? (
+                      {isBuffering && isCurrentTrack && !isReady ? (
                         <Loader2 className="w-7 h-7 animate-spin" />
                       ) : isPlaying && isCurrentTrack ? (
                         <Pause className="w-7 h-7 fill-current" />
@@ -377,11 +353,11 @@ export default function NowPlayingPage() {
                         <Play className="w-7 h-7 fill-current ml-1" />
                       )}
                     </button>
-
                     <button onClick={playNext} disabled={!hasNext} className="text-muted-foreground hover:text-white transition-colors disabled:opacity-30">
                       <SkipForward className="w-7 h-7 fill-current" />
                     </button>
                   </div>
+
                   <div className="w-1/3" />
                 </div>
               </div>
@@ -394,7 +370,7 @@ export default function NowPlayingPage() {
         </div>
       </div>
 
-      {/* Right Sidebar */}
+      {/* ── Right Sidebar ── */}
       <div className="w-full lg:w-[380px] bg-sidebar border-l border-sidebar-border flex flex-col h-full z-20">
         <Tabs defaultValue="related" className="flex-1 flex flex-col w-full h-full">
           <TabsList className="w-full justify-start rounded-none border-b border-sidebar-border bg-transparent p-0 h-12 flex-shrink-0">
@@ -423,7 +399,7 @@ export default function NowPlayingPage() {
             </TabsContent>
 
             <TabsContent value="download" className="m-0 p-4 outline-none space-y-6">
-              <CookiesSection onSaved={() => window.location.reload()} />
+              <CookiesSection />
               <div className="border-t border-border pt-5">
                 <DownloadSection videoId={videoId} trackTitle={track?.title ?? videoId} />
               </div>

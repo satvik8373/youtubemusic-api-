@@ -2,7 +2,7 @@ import { usePlayer } from "@/context/player-context";
 import { useLocation } from "wouter";
 import {
   Play, Pause, SkipBack, SkipForward,
-  Volume2, VolumeX, Loader2, ListMusic, WifiOff,
+  Volume2, VolumeX, Loader2, ListMusic, ChevronUp,
 } from "lucide-react";
 import { formatDuration } from "@/lib/format";
 import { Slider } from "@/components/ui/slider";
@@ -36,7 +36,7 @@ export function BottomPlayer() {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 h-20 bg-sidebar/95 backdrop-blur-xl border-t border-sidebar-border flex items-center px-4 gap-4 shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
-      {/* Progress bar at very top of player */}
+      {/* Progress bar at very top */}
       <div
         className="absolute top-0 left-0 right-0 h-0.5 bg-border cursor-pointer group"
         onClick={(e) => {
@@ -46,19 +46,20 @@ export function BottomPlayer() {
         }}
       >
         <div
-          className="h-full bg-primary transition-all duration-200 group-hover:bg-primary/80 relative"
+          className="h-full bg-primary transition-all duration-200 relative"
           style={{ width: `${progress}%` }}
         >
           <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary opacity-0 group-hover:opacity-100 shadow-[0_0_8px_rgba(236,72,153,0.8)] transition-opacity" />
         </div>
       </div>
 
-      {/* Track info */}
-      <div
-        className="flex items-center gap-3 min-w-0 w-64 flex-shrink-0 cursor-pointer group"
+      {/* Track info — tap to open full player */}
+      <button
+        className="flex items-center gap-3 min-w-0 w-64 flex-shrink-0 group text-left relative"
         onClick={() => setLocation(`/track/${currentTrack.id}`)}
       >
-        <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 border border-border shadow-md">
+        {/* Thumbnail */}
+        <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 border border-border shadow-md">
           {currentTrack.thumbnailUrl ? (
             <img
               src={currentTrack.thumbnailUrl}
@@ -70,8 +71,14 @@ export function BottomPlayer() {
               <ListMusic className="w-5 h-5 text-muted-foreground" />
             </div>
           )}
+          {/* Hover overlay: chevron up */}
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-lg">
+            <ChevronUp className="w-5 h-5 text-white" />
+          </div>
         </div>
-        <div className="min-w-0">
+
+        {/* Title + artist */}
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground line-clamp-1 group-hover:text-primary transition-colors">
             {currentTrack.title}
           </p>
@@ -79,7 +86,7 @@ export function BottomPlayer() {
             {currentTrack.uploader ?? "Unknown Artist"}
           </p>
         </div>
-      </div>
+      </button>
 
       {/* Controls */}
       <div className="flex-1 flex flex-col items-center gap-1 max-w-xl mx-auto">
@@ -116,7 +123,7 @@ export function BottomPlayer() {
         </div>
 
         <div className="flex items-center gap-2 w-full text-xs text-muted-foreground font-mono">
-          <span className="w-8 text-right">{formatDuration(currentTime)}</span>
+          <span className="w-8 text-right tabular-nums">{formatDuration(currentTime)}</span>
           <Slider
             value={[currentTime]}
             max={duration || 1}
@@ -124,7 +131,7 @@ export function BottomPlayer() {
             onValueChange={(v) => v[0] !== undefined && seekTo(v[0])}
             className="flex-1 cursor-pointer h-1"
           />
-          <span className="w-8">{formatDuration(duration)}</span>
+          <span className="w-8 tabular-nums">{formatDuration(duration)}</span>
         </div>
       </div>
 
