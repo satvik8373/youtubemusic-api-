@@ -22,6 +22,7 @@ import type {
   GetLyricsParams,
   GetTrendingParams,
   HealthStatus,
+  HomeFeed,
   LyricsResult,
   Playlist,
   SearchTracksParams,
@@ -194,6 +195,84 @@ export function useSearchTracks<TData = Awaited<ReturnType<typeof searchTracks>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchTracksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetHomeFeedUrl = () => {
+
+
+
+
+  return `/api/home`
+}
+
+/**
+ * Returns live YouTube song recommendations grouped into regional and mood-based playlist sections for India.
+ * @summary Get India-focused home recommendations
+ */
+export const getHomeFeed = async ( options?: RequestInit): Promise<HomeFeed> => {
+
+  return customFetch<HomeFeed>(getGetHomeFeedUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHomeFeedQueryKey = () => {
+    return [
+    `/api/home`
+    ] as const;
+    }
+
+
+export const getGetHomeFeedQueryOptions = <TData = Awaited<ReturnType<typeof getHomeFeed>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHomeFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHomeFeedQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHomeFeed>>> = ({ signal }) => getHomeFeed({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHomeFeed>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetHomeFeedQueryResult = NonNullable<Awaited<ReturnType<typeof getHomeFeed>>>
+export type GetHomeFeedQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get India-focused home recommendations
+ */
+
+export function useGetHomeFeed<TData = Awaited<ReturnType<typeof getHomeFeed>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHomeFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetHomeFeedQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

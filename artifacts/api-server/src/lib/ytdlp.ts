@@ -6,6 +6,19 @@ import { logger } from "./logger";
 
 const YTDLP_BIN = process.env.YTDLP_BIN ?? "yt-dlp";
 export const COOKIES_FILE = path.join(os.tmpdir(), "yt-cookies.txt");
+const YOUTUBE_INNER_TUBE_URL =
+  "https://www.youtube.com/youtubei/v1";
+const YOUTUBE_CLIENT = {
+  clientName: "WEB",
+  clientVersion: "2.20250101.00.00",
+  hl: "en",
+  gl: "US",
+};
+
+export const isServerlessRuntime =
+  process.env.VERCEL === "1" ||
+  process.env.SERVERLESS === "1" ||
+  Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 interface CachedStreamUrl {
   url: string;
@@ -18,11 +31,8 @@ export async function getDirectStreamUrl(videoId: string, format = "bestaudio"):
   const cached = streamUrlCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.url;
 
-  const cookiesExist = await fs.promises
-    .access(COOKIES_FILE)
-    .then(() => true)
-    .catch(() => false);
-  if (!cookiesExist) throw new Error("NO_COOKIES");
+  const cookiesFile = await getCookiesFile();
+  if (!cookiesFile) throw new Error("NO_COOKIES");
 
   const args = [
     `https://www.youtube.com/watch?v=${videoId}`,
@@ -32,7 +42,7 @@ export async function getDirectStreamUrl(videoId: string, format = "bestaudio"):
     "--no-warnings",
     "--quiet",
     "--cookies",
-    COOKIES_FILE,
+    cookiesFile,
   ];
 
   const output = await runYtDlp(args);
@@ -53,6 +63,10 @@ function runYtDlp(args: string[]): Promise<string> {
 
     let stdout = "";
     let stderr = "";
+    const timeout = setTimeout(() => {
+      proc.kill("SIGTERM");
+      reject(new Error("yt-dlp timed out"));
+    }, Number(process.env.YTDLP_TIMEOUT_MS ?? 25000));
 
     proc.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -63,6 +77,7 @@ function runYtDlp(args: string[]): Promise<string> {
     });
 
     proc.on("close", (code) => {
+      clearTimeout(timeout);
       if (code !== 0) {
         logger.warn({ code, stderr: stderr.slice(0, 500) }, "yt-dlp exited with error");
         reject(new Error(stderr.slice(0, 300) || `yt-dlp exited with code ${code}`));
@@ -72,9 +87,161 @@ function runYtDlp(args: string[]): Promise<string> {
     });
 
     proc.on("error", (err) => {
+      clearTimeout(timeout);
       reject(err);
     });
   });
+}
+
+export async function getCookiesFile(): Promise<string | null> {
+  const configuredCookies = process.env.YOUTUBE_COOKIES?.trim();
+  if (configuredCookies) {
+    const envCookiesFile = path.join(os.tmpdir(), "yt-cookies-env.txt");
+    await fs.promises.writeFile(envCookiesFile, configuredCookies, "utf8");
+    return envCookiesFile;
+  }
+
+  return fs.promises
+    .access(COOKIES_FILE)
+    .then(() => COOKIES_FILE)
+    .catch(() => null);
+}
+
+function textFromRuns(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  if (typeof record.simpleText === "string") return record.simpleText;
+  if (Array.isArray(record.runs)) {
+    return record.runs
+      .map((run) =>
+        run && typeof run === "object" && typeof (run as Record<string, unknown>).text === "string"
+          ? (run as Record<string, string>).text
+          : "",
+      )
+      .join("");
+  }
+  return "";
+}
+
+function collectObjects(value: unknown, key: string, result: Record<string, unknown>[] = []) {
+  if (!value || typeof value !== "object") return result;
+  if (Array.isArray(value)) {
+    for (const item of value) collectObjects(item, key, result);
+    return result;
+  }
+
+  const record = value as Record<string, unknown>;
+  const candidate = record[key];
+  if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+    result.push(candidate as Record<string, unknown>);
+  }
+  for (const child of Object.values(record)) collectObjects(child, key, result);
+  return result;
+}
+
+function parseDuration(value: string): number | null {
+  const parts = value.split(":").map(Number);
+  if (parts.some(Number.isNaN)) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts.length === 1 ? parts[0] : null;
+}
+
+function mapYouTubeVideo(video: Record<string, unknown>): YtTrack | null {
+  const id = typeof video.videoId === "string" ? video.videoId : "";
+  if (!id) return null;
+
+  const thumbnails = (video.thumbnail as { thumbnails?: Array<{ url: string }> } | undefined)
+    ?.thumbnails;
+  const owner = textFromRuns(video.ownerText) || textFromRuns(video.longBylineText);
+  const durationText = textFromRuns(video.lengthText);
+
+  return {
+    id,
+    title: textFromRuns(video.title) || "Unknown",
+    uploader: owner || null,
+    thumbnailUrl:
+      thumbnails?.at(-1)?.url ?? `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+    duration: durationText ? parseDuration(durationText) : null,
+    viewCount: null,
+    likeCount: null,
+    uploadDate: null,
+    webpage_url: `https://www.youtube.com/watch?v=${id}`,
+  };
+}
+
+async function youtubeInnerTubeRequest(
+  endpoint: "search" | "browse",
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(
+    `${YOUTUBE_INNER_TUBE_URL}/${endpoint}?prettyPrint=false`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent":
+          "Mozilla/5.0 (compatible; SonicMusic/1.0; +https://www.youtube.com)",
+      },
+      body: JSON.stringify({
+        context: { client: YOUTUBE_CLIENT },
+        ...body,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`YouTube request failed: ${response.status}`);
+  }
+  return (await response.json()) as Record<string, unknown>;
+}
+
+async function searchYouTube(query: string, limit: number): Promise<YtTrack[]> {
+  const data = await youtubeInnerTubeRequest("search", { query });
+  const videos = collectObjects(data, "videoRenderer")
+    .map(mapYouTubeVideo)
+    .filter((track): track is YtTrack => Boolean(track));
+  return videos.slice(0, limit);
+}
+
+async function browseYouTubePlaylist(playlistId: string): Promise<YtPlaylist> {
+  const data = await youtubeInnerTubeRequest("browse", {
+    browseId: `VL${playlistId}`,
+  });
+  const videos = collectObjects(data, "playlistVideoRenderer")
+    .map((video) => ({
+      ...video,
+      videoId: video.videoId,
+    }))
+    .map(mapYouTubeVideo)
+    .filter((track): track is YtTrack => Boolean(track));
+  const title =
+    collectObjects(data, "playlistHeaderRenderer")[0] &&
+    textFromRuns(collectObjects(data, "playlistHeaderRenderer")[0]?.title);
+
+  return {
+    id: playlistId,
+    title: title || "Playlist",
+    uploader: null,
+    thumbnailUrl: videos[0]?.thumbnailUrl ?? null,
+    description: null,
+    trackCount: videos.length,
+    tracks: videos.slice(0, 50),
+  };
+}
+
+async function withYouTubeFallback(
+  ytDlpOperation: () => Promise<YtTrack[]>,
+  query: string,
+  limit: number,
+): Promise<YtTrack[]> {
+  if (isServerlessRuntime) return searchYouTube(query, limit);
+  try {
+    return await ytDlpOperation();
+  } catch (err) {
+    logger.warn({ err }, "yt-dlp unavailable; using YouTube HTTP fallback");
+    return searchYouTube(query, limit);
+  }
 }
 
 function parseJsonLines(raw: string): unknown[] {
@@ -143,6 +310,19 @@ export interface YtPlaylist {
   tracks: YtTrack[];
 }
 
+export interface HomeSection {
+  id: string;
+  title: string;
+  subtitle: string;
+  query: string;
+  tracks: YtTrack[];
+}
+
+export interface HomeFeed {
+  region: string;
+  sections: HomeSection[];
+}
+
 export interface YtSubtitlesResult {
   videoId: string;
   subtitles: { language: string; name: string; ext: string }[];
@@ -180,16 +360,21 @@ function mapFlatTrack(item: Record<string, unknown>): YtTrack {
 }
 
 export async function searchTracks(query: string, limit = 20): Promise<YtTrack[]> {
-  const raw = await runYtDlp([
-    `ytsearch${limit}:${query}`,
-    "--flat-playlist",
-    "--dump-json",
-    "--no-warnings",
-    "--quiet",
-  ]);
-
-  const items = parseJsonLines(raw) as Record<string, unknown>[];
-  return items.filter((i) => i.id && i.title).map(mapFlatTrack);
+  return withYouTubeFallback(
+    async () => {
+      const raw = await runYtDlp([
+        `ytsearch${limit}:${query}`,
+        "--flat-playlist",
+        "--dump-json",
+        "--no-warnings",
+        "--quiet",
+      ]);
+      const items = parseJsonLines(raw) as Record<string, unknown>[];
+      return items.filter((i) => i.id && i.title).map(mapFlatTrack);
+    },
+    query,
+    limit,
+  );
 }
 
 export async function getTrackInfo(videoId: string): Promise<YtTrackDetail> {
@@ -227,16 +412,86 @@ export async function getTrackInfo(videoId: string): Promise<YtTrackDetail> {
 }
 
 export async function getTrending(limit = 20): Promise<YtTrack[]> {
-  const raw = await runYtDlp([
-    `ytsearch${limit}:trending music 2025`,
-    "--flat-playlist",
-    "--dump-json",
-    "--no-warnings",
-    "--quiet",
-  ]);
+  return withYouTubeFallback(
+    async () => {
+      const raw = await runYtDlp([
+        `ytsearch${limit}:trending music`,
+        "--flat-playlist",
+        "--dump-json",
+        "--no-warnings",
+        "--quiet",
+      ]);
+      const items = parseJsonLines(raw) as Record<string, unknown>[];
+      return items.filter((i) => i.id && i.title).map(mapFlatTrack);
+    },
+    "trending music",
+    limit,
+  );
+}
 
-  const items = parseJsonLines(raw) as Record<string, unknown>[];
-  return items.filter((i) => i.id && i.title).map(mapFlatTrack);
+const HOME_SECTION_CONFIG = [
+  {
+    id: "india-now",
+    title: "India Now",
+    subtitle: "What listeners across India are playing",
+    query: "YouTube India trending music",
+  },
+  {
+    id: "bollywood-fresh",
+    title: "Bollywood Fresh",
+    subtitle: "New Hindi releases and film favourites",
+    query: "Bollywood new songs 2026",
+  },
+  {
+    id: "punjabi-beats",
+    title: "Punjabi Beats",
+    subtitle: "High-energy Punjabi songs",
+    query: "Punjabi songs 2026 hits",
+  },
+  {
+    id: "south-india",
+    title: "South India Selects",
+    subtitle: "Tamil, Telugu, Malayalam and Kannada picks",
+    query: "South Indian songs 2026 Tamil Telugu Malayalam Kannada",
+  },
+  {
+    id: "indian-indie",
+    title: "Indian Indie",
+    subtitle: "Independent voices worth discovering",
+    query: "Indian indie music new artists",
+  },
+  {
+    id: "love-and-chill",
+    title: "Love & Chill",
+    subtitle: "Soft Hindi and Indian romantic songs",
+    query: "Hindi romantic songs love chill playlist",
+  },
+] as const;
+
+let homeFeedCache: { expiresAt: number; value: HomeFeed } | null = null;
+
+export async function getHomeFeed(): Promise<HomeFeed> {
+  if (homeFeedCache && homeFeedCache.expiresAt > Date.now()) {
+    return homeFeedCache.value;
+  }
+
+  const sections = await Promise.all(
+    HOME_SECTION_CONFIG.map(async (config): Promise<HomeSection> => {
+      try {
+        return {
+          ...config,
+          tracks: await searchTracks(config.query, 12),
+        };
+      } catch (err) {
+        logger.warn({ err, section: config.id }, "Home recommendation section failed");
+        return { ...config, tracks: [] };
+      }
+    }),
+  );
+
+  const feed = { region: "IN", sections };
+  homeFeedCache = { expiresAt: Date.now() + 5 * 60 * 1000, value: feed };
+  return feed;
 }
 
 export async function getRelated(videoId: string): Promise<YtTrack[]> {
@@ -252,19 +507,25 @@ export async function getRelated(videoId: string): Promise<YtTrack[]> {
     // fallback to generic query
   }
 
-  const raw = await runYtDlp([
-    `ytsearch10:${searchQuery}`,
-    "--flat-playlist",
-    "--dump-json",
-    "--no-warnings",
-    "--quiet",
-  ]);
-
-  const items = parseJsonLines(raw) as Record<string, unknown>[];
-  return items
-    .filter((item) => item.id && item.title && String(item.id) !== videoId)
-    .slice(0, 10)
-    .map(mapFlatTrack);
+  const tracks = await withYouTubeFallback(
+    async () => {
+      const raw = await runYtDlp([
+        `ytsearch10:${searchQuery}`,
+        "--flat-playlist",
+        "--dump-json",
+        "--no-warnings",
+        "--quiet",
+      ]);
+      const items = parseJsonLines(raw) as Record<string, unknown>[];
+      return items
+        .filter((item) => item.id && item.title)
+        .slice(0, 10)
+        .map(mapFlatTrack);
+    },
+    searchQuery,
+    10,
+  );
+  return tracks.filter((track) => track.id !== videoId).slice(0, 10);
 }
 
 export async function getStreamUrl(videoId: string): Promise<YtStreamUrl> {
@@ -314,35 +575,43 @@ export async function getFormats(videoId: string): Promise<YtAudioFormat[]> {
 }
 
 export async function getPlaylist(playlistId: string): Promise<YtPlaylist> {
-  const raw = await runYtDlp([
-    `https://www.youtube.com/playlist?list=${playlistId}`,
-    "--flat-playlist",
-    "--dump-json",
-    "--no-warnings",
-    "--quiet",
-  ]);
+  if (isServerlessRuntime) return browseYouTubePlaylist(playlistId);
+  try {
+    const raw = await runYtDlp([
+      `https://www.youtube.com/playlist?list=${playlistId}`,
+      "--flat-playlist",
+      "--dump-json",
+      "--no-warnings",
+      "--quiet",
+    ]);
 
-  const lines = parseJsonLines(raw) as Record<string, unknown>[];
+    const lines = parseJsonLines(raw) as Record<string, unknown>[];
+    const meta = lines.find((l) => l._type === "playlist");
+    const entries = lines.filter(
+      (l) => l._type === "url" || l._type === "video" || l.ie_key,
+    );
 
-  const meta = lines.find((l) => l._type === "playlist");
-  const entries = lines.filter(
-    (l) => l._type === "url" || l._type === "video" || l.ie_key
-  );
-
-  return {
-    id: playlistId,
-    title: String(meta?.title ?? "Playlist"),
-    uploader: (meta?.uploader as string | null) ?? null,
-    thumbnailUrl: null,
-    description: (meta?.description as string | null) ?? null,
-    trackCount: entries.length,
-    tracks: entries.slice(0, 50).map(mapFlatTrack),
-  };
+    return {
+      id: playlistId,
+      title: String(meta?.title ?? "Playlist"),
+      uploader: (meta?.uploader as string | null) ?? null,
+      thumbnailUrl: null,
+      description: (meta?.description as string | null) ?? null,
+      trackCount: entries.length,
+      tracks: entries.slice(0, 50).map(mapFlatTrack),
+    };
+  } catch (err) {
+    logger.warn({ err }, "yt-dlp unavailable; using YouTube playlist fallback");
+    return browseYouTubePlaylist(playlistId);
+  }
 }
 
 export async function downloadAudio(
   videoId: string
 ): Promise<{ filePath: string; tmpDir: string; filename: string }> {
+  if (isServerlessRuntime) {
+    throw new Error("SERVERLESS_DOWNLOAD_UNSUPPORTED");
+  }
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "ytdl-"));
   const args = [
     `https://www.youtube.com/watch?v=${videoId}`,
@@ -358,12 +627,9 @@ export async function downloadAudio(
     "--quiet",
   ];
 
-  const cookiesExist = await fs.promises
-    .access(COOKIES_FILE)
-    .then(() => true)
-    .catch(() => false);
-  if (cookiesExist) {
-    args.push("--cookies", COOKIES_FILE);
+  const cookiesFile = await getCookiesFile();
+  if (cookiesFile) {
+    args.push("--cookies", cookiesFile);
   }
 
   await runYtDlp(args);

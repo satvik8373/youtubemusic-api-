@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm --filter @workspace/music-app run build",
+  "outputDirectory": "artifacts/music-app/dist/public",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/((?!api(?:/|$)).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/[...path].ts": {
+      "maxDuration": 60,
+      "includeFiles": "artifacts/api-server/**"
+    },
+    "api/index.ts": {
+      "maxDuration": 60,
+      "includeFiles": "artifacts/api-server/**"
+    }
+  }
+}

@@ -59,6 +59,19 @@ export interface TrackDetail {
   channelUrl?: string | null;
 }
 
+export interface HomeSection {
+  id: string;
+  title: string;
+  subtitle: string;
+  query: string;
+  tracks: Track[];
+}
+
+export interface HomeFeed {
+  region: string;
+  sections: HomeSection[];
+}
+
 export interface StreamUrlResult {
   videoId: string;
   url: string;

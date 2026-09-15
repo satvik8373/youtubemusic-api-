@@ -63,6 +63,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /home:
+    get:
+      operationId: getHomeFeed
+      tags: [music]
+      summary: Get India-focused home recommendations
+      description: Returns live YouTube song recommendations grouped into regional and mood-based playlist sections for India.
+      responses:
+        "200":
+          description: India-focused home feed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeFeed"
+        "502":
+          description: Recommendation provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /track/{videoId}:
     get:
       operationId: getTrack
@@ -377,6 +397,41 @@ components:
         - webpage_url
         - tags
         - categories
+
+    HomeSection:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        subtitle:
+          type: string
+        query:
+          type: string
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Track"
+      required:
+        - id
+        - title
+        - subtitle
+        - query
+        - tracks
+
+    HomeFeed:
+      type: object
+      properties:
+        region:
+          type: string
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomeSection"
+      required:
+        - region
+        - sections
 
     StreamUrlResult:
       type: object

@@ -18,6 +18,7 @@ import {
   GetFormatsResponse,
   GetPlaylistResponse,
   GetSubtitlesResponse,
+  GetHomeFeedResponse,
 } from "@workspace/api-zod";
 import {
   searchTracks,
@@ -31,9 +32,22 @@ import {
   downloadAudio,
   getDirectStreamUrl,
   COOKIES_FILE,
+  getCookiesFile,
+  isServerlessRuntime,
+  getHomeFeed,
 } from "../lib/ytdlp";
 
 const router: IRouter = Router();
+
+router.get("/home", async (req, res): Promise<void> => {
+  try {
+    const feed = await getHomeFeed();
+    res.json(GetHomeFeedResponse.parse(feed));
+  } catch (err) {
+    req.log.error({ err }, "Get home feed failed");
+    res.status(502).json({ error: "Recommendation provider unavailable" });
+  }
+});
 
 router.get("/search", async (req, res): Promise<void> => {
   const parsed = SearchTracksQueryParams.safeParse(req.query);
@@ -284,19 +298,27 @@ router.get("/stream/:videoId", async (req, res): Promise<void> => {
 });
 
 router.get("/cookies/status", async (_req, res): Promise<void> => {
-  const hasCookies = await fs.promises
-    .access(COOKIES_FILE)
-    .then(() => true)
-    .catch(() => false);
+  const hasCookies = Boolean(await getCookiesFile());
+  const downloadsSupported = !isServerlessRuntime;
   res.json({
     hasCookies,
-    message: hasCookies
+    downloadsSupported,
+    message: !downloadsSupported
+      ? "This deployment uses serverless functions. Playback is available, but MP3 conversion needs a separate audio worker."
+      : hasCookies
       ? "YouTube cookies are active — downloads enabled."
       : "No cookies uploaded. Downloads require YouTube authentication.",
   });
 });
 
 router.post("/cookies", async (req, res): Promise<void> => {
+  if (isServerlessRuntime && !process.env.YOUTUBE_COOKIES) {
+    res.status(501).json({
+      error:
+        "Cookie uploads are not persistent on serverless hosting. Configure YOUTUBE_COOKIES as a deployment secret instead.",
+    });
+    return;
+  }
   const { content } = req.body as { content?: string };
   if (!content || typeof content !== "string" || content.trim().length === 0) {
     res.status(400).json({ error: "Missing cookies content" });
@@ -311,7 +333,7 @@ router.post("/cookies", async (req, res): Promise<void> => {
   }
 });
 
-router.delete("/cookies", async (_req, res): Promise<void> => {
+router.delete("/cookies", async (req, res): Promise<void> => {
   try {
     await fs.promises.unlink(COOKIES_FILE).catch(() => {});
     res.json({ ok: true });
@@ -351,8 +373,11 @@ router.get("/download/:videoId", async (req, res): Promise<void> => {
       .then(() => true)
       .catch(() => false);
     req.log.warn({ err, hasCookies }, "Download failed");
-    res.status(500).json({
-      error: hasCookies
+    const errorMessage = err instanceof Error ? err.message : "";
+    res.status(errorMessage === "SERVERLESS_DOWNLOAD_UNSUPPORTED" ? 501 : 500).json({
+      error: errorMessage === "SERVERLESS_DOWNLOAD_UNSUPPORTED"
+        ? "MP3 conversion is not supported inside a serverless function. Keep playback enabled here and use a separate audio worker for downloads."
+        : hasCookies
         ? "Download failed. YouTube may have blocked this request."
         : "Download requires YouTube cookies. Upload cookies.txt in the Download tab.",
       needsCookies: !hasCookies,

@@ -43,6 +43,32 @@ export const SearchTracksResponse = zod.array(SearchTracksResponseItem)
 
 
 /**
+ * Returns live YouTube song recommendations grouped into regional and mood-based playlist sections for India.
+ * @summary Get India-focused home recommendations
+ */
+export const GetHomeFeedResponse = zod.object({
+  "region": zod.string(),
+  "sections": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "subtitle": zod.string(),
+  "query": zod.string(),
+  "tracks": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "uploader": zod.string().nullish(),
+  "thumbnailUrl": zod.string().nullish(),
+  "duration": zod.number().nullish(),
+  "viewCount": zod.number().nullish(),
+  "likeCount": zod.number().nullish(),
+  "uploadDate": zod.string().nullish(),
+  "webpage_url": zod.string()
+}))
+}))
+})
+
+
+/**
  * Get detailed metadata for a track by video ID
  * @summary Get track info
  */
