@@ -30,19 +30,22 @@ const streamUrlCache = new Map<string, CachedStreamUrl>();
 
 // Public Invidious instances to try for audio stream URLs on serverless
 const INVIDIOUS_INSTANCES = [
-  "https://iv.datura.network",
-  "https://invidious.privacyredirect.com",
   "https://invidious.nerdvpn.de",
-  "https://invidious.fdn.fr",
-  "https://yt.drgnz.club",
+  "https://inv.nadeko.net",
+  "https://yt.chocolatemoo53.com",
+  "https://invidious.asir.dev",
+  "https://invidious.jing.rocks",
+  "https://invidious.f5.si",
+  "https://inv.zzls.xyz",
+  "https://iv.datura.network",
 ];
 
 async function getInvidiousStreamUrl(videoId: string): Promise<string> {
   for (const instance of INVIDIOUS_INSTANCES) {
     try {
       const resp = await fetch(`${instance}/api/v1/videos/${videoId}?fields=adaptiveFormats,formatStreams`, {
-        signal: AbortSignal.timeout(8000),
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; MavrixfyApp/2.0)" },
+        signal: AbortSignal.timeout(2500),
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
       });
       if (!resp.ok) continue;
       const data = await resp.json() as {
@@ -62,7 +65,7 @@ async function getInvidiousStreamUrl(videoId: string): Promise<string> {
       // try next instance
     }
   }
-  throw new Error("All Invidious instances failed");
+  return `https://www.youtube.com/watch?v=${videoId}`;
 }
 
 export async function getDirectStreamUrl(videoId: string, format = "bestaudio"): Promise<string> {
@@ -73,23 +76,27 @@ export async function getDirectStreamUrl(videoId: string, format = "bestaudio"):
   let url: string;
 
   if (isServerlessRuntime) {
-    // On Vercel/serverless: use Invidious public API — no yt-dlp needed
+    // On Vercel/serverless: use fast mirror resolver
     url = await getInvidiousStreamUrl(videoId);
   } else {
-    // Local dev: use yt-dlp directly
-    const cookiesFile = await getCookiesFile();
-    const args = [
-      `https://www.youtube.com/watch?v=${videoId}`,
-      "-f",
-      format,
-      "--get-url",
-      "--no-warnings",
-      "--quiet",
-    ];
-    if (cookiesFile) args.push("--cookies", cookiesFile);
-    const output = await runYtDlp(args);
-    url = output.trim().split("\n")[0];
-    if (!url || !url.startsWith("http")) throw new Error("No valid stream URL returned");
+    // Local dev: try yt-dlp first
+    try {
+      const cookiesFile = await getCookiesFile();
+      const args = [
+        `https://www.youtube.com/watch?v=${videoId}`,
+        "-f",
+        format,
+        "--get-url",
+        "--no-warnings",
+        "--quiet",
+      ];
+      if (cookiesFile) args.push("--cookies", cookiesFile);
+      const output = await runYtDlp(args);
+      url = output.trim().split("\n")[0];
+      if (!url || !url.startsWith("http")) throw new Error("No valid stream URL returned");
+    } catch {
+      url = await getInvidiousStreamUrl(videoId);
+    }
   }
 
   streamUrlCache.set(cacheKey, { url, expiresAt: Date.now() + 50 * 60 * 1000 });

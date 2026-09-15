@@ -646,6 +646,11 @@ router.get(
     try {
       const streamUrl = await getDirectStreamUrl(videoId);
 
+      if (!streamUrl.startsWith("http")) {
+        res.redirect(302, `https://www.youtube.com/watch?v=${videoId}`);
+        return;
+      }
+
       const headers: Record<string, string> = {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -655,6 +660,12 @@ router.get(
       }
 
       const upstream = await fetch(streamUrl, { headers });
+
+      if (!upstream.ok && upstream.status !== 206) {
+        // If upstream mirror returned non-200, redirect to direct URL
+        res.redirect(302, streamUrl);
+        return;
+      }
 
       res.status(upstream.status);
       for (const h of [
@@ -677,7 +688,7 @@ router.get(
           upstream.body as import("stream/web").ReadableStream,
         ).pipe(res);
       } else {
-        res.end();
+        res.redirect(302, streamUrl);
       }
 
       req.on("close", () => {
@@ -685,12 +696,9 @@ router.get(
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      req.log.warn({ err: msg, videoId }, "Stream failed");
+      req.log.warn({ err: msg, videoId }, "Stream fallback redirect");
       if (!res.headersSent) {
-        res.status(503).json({
-          error: "Stream extraction failed — YouTube playback unavailable",
-          videoId,
-        });
+        res.redirect(302, `https://www.youtube.com/watch?v=${videoId}`);
       }
     }
   },
