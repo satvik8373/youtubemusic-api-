@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "pnpm -w run build:vercel",
+  "buildCommand": "pnpm --filter @workspace/music-app run build",
   "outputDirectory": "public",
   "framework": null,
   "rewrites": [
