@@ -703,39 +703,62 @@ router.get("/download/:videoId", async (req, res): Promise<void> => {
     return;
   }
 
-  req.log.info({ videoId }, "Starting audio download");
+  req.log.info({ videoId }, "Starting audio download/stream");
 
+  // First try yt-dlp local conversion if not running in serverless environment
+  if (!isServerlessRuntime) {
+    try {
+      const { filePath, tmpDir, filename } = await downloadAudio(videoId);
+      const safe = encodeURIComponent(filename.replace(/[^\w\s.-]/g, "_"));
+      res.setHeader("Content-Disposition", `attachment; filename="${safe}"`);
+      res.setHeader("Content-Type", "audio/mpeg");
+      const stream = fs.createReadStream(filePath);
+      stream.pipe(res);
+      stream.on("end", () => {
+        fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      });
+      stream.on("error", (err) => {
+        req.log.error({ err }, "Stream error during download");
+        if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+        fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      });
+      return;
+    } catch (err) {
+      req.log.warn({ err }, "Local download failed, falling back to direct audio stream");
+    }
+  }
+
+  // Serverless / streaming fallback: stream directly without ffmpeg requirement
   try {
-    const { filePath, tmpDir, filename } = await downloadAudio(videoId);
-    const safe = encodeURIComponent(filename.replace(/[^\w\s.-]/g, "_"));
-    res.setHeader("Content-Disposition", `attachment; filename="${safe}"`);
+    const streamUrl = await getDirectStreamUrl(videoId);
+    const upstream = await fetch(streamUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      },
+    });
+
+    res.status(upstream.status || 200);
+    res.setHeader("Content-Disposition", `attachment; filename="${videoId}.mp3"`);
     res.setHeader("Content-Type", "audio/mpeg");
-    const stream = fs.createReadStream(filePath);
-    stream.pipe(res);
-    stream.on("end", () => {
-      fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    });
-    stream.on("error", (err) => {
-      req.log.error({ err }, "Stream error during download");
-      if (!res.headersSent) res.status(500).json({ error: "Stream error" });
-      fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    });
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    
+    for (const h of ["content-length", "accept-ranges", "content-range"]) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+
+    if (upstream.body) {
+      Readable.fromWeb(
+        upstream.body as import("stream/web").ReadableStream,
+      ).pipe(res);
+    } else {
+      res.redirect(302, streamUrl);
+    }
   } catch (err) {
-    const hasCookies = await fs.promises
-      .access(COOKIES_FILE)
-      .then(() => true)
-      .catch(() => false);
-    req.log.warn({ err, hasCookies }, "Download failed");
-    const errorMessage = err instanceof Error ? err.message : "";
-    res.status(errorMessage === "SERVERLESS_DOWNLOAD_UNSUPPORTED" ? 501 : 500).json({
-      error:
-        errorMessage === "SERVERLESS_DOWNLOAD_UNSUPPORTED"
-          ? "MP3 conversion is not supported inside a serverless function. Keep playback enabled here and use a separate audio worker for downloads."
-          : hasCookies
-          ? "Download failed. YouTube may have blocked this request."
-          : "Download requires YouTube cookies. Upload cookies.txt in the Download tab.",
-      needsCookies: !hasCookies,
-    });
+    req.log.warn({ err, videoId }, "Serverless audio stream extraction fallback");
+    const baseUrl = getBaseUrl(req);
+    res.redirect(302, `${baseUrl}/api/stream/${videoId}.mp3`);
   }
 });
 
