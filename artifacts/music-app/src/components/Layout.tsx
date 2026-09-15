@@ -18,8 +18,37 @@ export function Layout({ children }: LayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground selection:bg-primary/30">
-      {/* Sidebar */}
+    <div className="min-h-screen flex flex-col md:flex-row bg-background text-foreground selection:bg-primary/30">
+      {/* Mobile Top Header */}
+      <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-sidebar/95 backdrop-blur-md sticky top-0 z-30">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-[0_0_12px_rgba(236,72,153,0.5)]">
+            <Disc3 className="text-white h-4 w-4 animate-spin-slow" />
+          </div>
+          <span className="font-bold tracking-tight text-lg bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
+            SONIC
+          </span>
+        </div>
+
+        <nav className="flex items-center gap-1">
+          {navItems.map((item) => (
+            <Link key={item.href} href={item.href}>
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  location === item.href
+                    ? "bg-primary/15 text-primary border border-primary/20"
+                    : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                }`}
+              >
+                <item.icon className="w-3.5 h-3.5" />
+                <span>{item.label}</span>
+              </div>
+            </Link>
+          ))}
+        </nav>
+      </header>
+
+      {/* Desktop Sidebar */}
       <aside
         className="w-60 flex-shrink-0 bg-sidebar border-r border-sidebar-border hidden md:flex flex-col"
         style={{ paddingBottom: currentTrack ? 80 : 0 }}

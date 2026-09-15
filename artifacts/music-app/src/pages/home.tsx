@@ -1,7 +1,8 @@
 import { useGetHomeFeed, type HomeSection } from "@workspace/api-client-react";
 import { TrackCard } from "@/components/TrackCard";
 import { SearchBar } from "@/components/SearchBar";
-import { ArrowDown, ArrowUpRight, Compass, LayoutGrid, List, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Compass, LayoutGrid, List, RefreshCw, Sparkles, Server } from "lucide-react";
+import { Link } from "wouter";
 import { useMemo, useState } from "react";
 
 function FeedSkeleton() {
@@ -152,6 +153,12 @@ export default function HomePage() {
                   Live listening room
                 </span>
                 <span className="text-muted-foreground">India / {feed?.region ?? "everywhere"}</span>
+                <Link href="/endpoints">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all cursor-pointer shadow-sm">
+                    <Server className="h-3 w-3" />
+                    <span>API Server Endpoints</span>
+                  </span>
+                </Link>
               </div>
               <h1 className="max-w-4xl font-display text-[3.5rem] font-semibold leading-[0.9] tracking-[-0.065em] text-foreground sm:text-7xl lg:text-[6.6rem]">
                 Sound moves
