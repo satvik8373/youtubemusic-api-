@@ -12,7 +12,7 @@ const YOUTUBE_CLIENT = {
   clientName: "WEB",
   clientVersion: "2.20250101.00.00",
   hl: "en",
-  gl: "US",
+  gl: "in",
 };
 
 export const isServerlessRuntime =
@@ -32,7 +32,6 @@ export async function getDirectStreamUrl(videoId: string, format = "bestaudio"):
   if (cached && cached.expiresAt > Date.now()) return cached.url;
 
   const cookiesFile = await getCookiesFile();
-  if (!cookiesFile) throw new Error("NO_COOKIES");
 
   const args = [
     `https://www.youtube.com/watch?v=${videoId}`,
@@ -41,9 +40,10 @@ export async function getDirectStreamUrl(videoId: string, format = "bestaudio"):
     "--get-url",
     "--no-warnings",
     "--quiet",
-    "--cookies",
-    cookiesFile,
   ];
+  if (cookiesFile) {
+    args.push("--cookies", cookiesFile);
+  }
 
   const output = await runYtDlp(args);
   const url = output.trim().split("\n")[0];
@@ -237,11 +237,12 @@ async function withYouTubeFallback(
 ): Promise<YtTrack[]> {
   if (isServerlessRuntime) return searchYouTube(query, limit);
   try {
-    return await ytDlpOperation();
+    const results = await ytDlpOperation();
+    if (results && results.length > 0) return results;
   } catch (err) {
     logger.warn({ err }, "yt-dlp unavailable; using YouTube HTTP fallback");
-    return searchYouTube(query, limit);
   }
+  return searchYouTube(query, limit);
 }
 
 function parseJsonLines(raw: string): unknown[] {
