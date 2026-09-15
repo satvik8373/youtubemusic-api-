@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
+    "build:vercel": "vite build --config vite.config.ts && node -e \"const fs = require('fs'); fs.cpSync('dist/public', '../../public', { recursive: true }); fs.cpSync('dist/public', '../../dist', { recursive: true });\"",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

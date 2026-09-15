@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "pnpm run build:vercel",
+  "buildCommand": "pnpm -w run build:vercel",
   "outputDirectory": "public",
   "framework": null,
   "rewrites": [
