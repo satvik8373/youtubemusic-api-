@@ -9,10 +9,9 @@ export const COOKIES_FILE = path.join(os.tmpdir(), "yt-cookies.txt");
 const YOUTUBE_INNER_TUBE_URL = "https://www.youtube.com/youtubei/v1";
 const YOUTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 
-// TVHTML5 client is the most reliable for unauthenticated search requests
 const YOUTUBE_CLIENT = {
-  clientName: "TVHTML5",
-  clientVersion: "7.20250101.12.00",
+  clientName: "WEB",
+  clientVersion: "2.20240101.00.00",
   hl: "en",
   gl: "IN",
   utcOffsetMinutes: 330,
@@ -197,7 +196,7 @@ function mapYouTubeVideo(video: Record<string, unknown>): YtTrack | null {
 
   const thumbnails = (video.thumbnail as { thumbnails?: Array<{ url: string }> } | undefined)
     ?.thumbnails;
-  const owner = textFromRuns(video.ownerText) || textFromRuns(video.longBylineText);
+  const owner = textFromRuns(video.ownerText) || textFromRuns(video.longBylineText) || textFromRuns(video.shortBylineText);
   const durationText = textFromRuns(video.lengthText);
 
   return {
@@ -224,9 +223,9 @@ async function youtubeInnerTubeRequest(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 Chrome/90.0.4430.91 Mobile Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Origin": "https://www.youtube.com",
-        "X-YouTube-Client-Name": "7",
+        "X-YouTube-Client-Name": "1",
         "X-YouTube-Client-Version": YOUTUBE_CLIENT.clientVersion,
         "Accept-Language": "en-IN,en;q=0.9",
       },
@@ -245,29 +244,34 @@ async function youtubeInnerTubeRequest(
 }
 
 async function searchYouTube(query: string, limit: number): Promise<YtTrack[]> {
-  const data = await youtubeInnerTubeRequest("search", { query, params: "EgIQAQ%3D%3D" });
+  try {
+    const data = await youtubeInnerTubeRequest("search", { query });
 
-  // Try all possible renderer types YouTube might return
-  const rendererKeys = ["videoRenderer", "compactVideoRenderer", "musicVideoRenderer"];
-  const videos: YtTrack[] = [];
+    // Try all possible renderer types YouTube might return
+    const rendererKeys = ["videoRenderer", "compactVideoRenderer", "gridVideoRenderer", "musicVideoRenderer"];
+    const videos: YtTrack[] = [];
 
-  for (const key of rendererKeys) {
-    const found = collectObjects(data, key)
-      .map(mapYouTubeVideo)
-      .filter((track): track is YtTrack => Boolean(track));
-    videos.push(...found);
-    if (videos.length >= limit) break;
+    for (const key of rendererKeys) {
+      const found = collectObjects(data, key)
+        .map(mapYouTubeVideo)
+        .filter((track): track is YtTrack => Boolean(track));
+      videos.push(...found);
+      if (videos.length >= limit) break;
+    }
+
+    // Deduplicate by id
+    const seen = new Set<string>();
+    const unique = videos.filter((t) => {
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+
+    return unique.slice(0, limit);
+  } catch (err) {
+    logger.warn({ err, query }, "searchYouTube failed");
+    return [];
   }
-
-  // Deduplicate by id
-  const seen = new Set<string>();
-  const unique = videos.filter((t) => {
-    if (seen.has(t.id)) return false;
-    seen.add(t.id);
-    return true;
-  });
-
-  return unique.slice(0, limit);
 }
 
 async function browseYouTubePlaylist(playlistId: string): Promise<YtPlaylist> {
@@ -535,6 +539,120 @@ const HOME_SECTION_CONFIG = [
   },
 ] as const;
 
+const FALLBACK_SECTION_TRACKS: Record<string, YtTrack[]> = {
+  "india-now": [
+    {
+      id: "c3DD2NvjLII",
+      title: "Dil Tera Raha | Ariyan Khan | Rashmika Mandana",
+      uploader: "Prakash Jojawar",
+      thumbnailUrl: "https://i.ytimg.com/vi/c3DD2NvjLII/hqdefault.jpg",
+      duration: 280,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2026",
+      webpage_url: "https://www.youtube.com/watch?v=c3DD2NvjLII",
+    },
+    {
+      id: "hPZcZpNn3KY",
+      title: "Rana Ji 2.0 | Mahira Sharma | Tanishk Bagchi",
+      uploader: "Tips Official",
+      thumbnailUrl: "https://i.ytimg.com/vi/hPZcZpNn3KY/hqdefault.jpg",
+      duration: 229,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2026",
+      webpage_url: "https://www.youtube.com/watch?v=hPZcZpNn3KY",
+    },
+    {
+      id: "kJQP7kiw5Fk",
+      title: "Despacito ft. Daddy Yankee",
+      uploader: "Luis Fonsi",
+      thumbnailUrl: "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg",
+      duration: 282,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2024",
+      webpage_url: "https://www.youtube.com/watch?v=kJQP7kiw5Fk",
+    },
+  ],
+  "bollywood-fresh": [
+    {
+      id: "hPZcZpNn3KY",
+      title: "Rana Ji 2.0 | Mahira Sharma | Tanishk Bagchi",
+      uploader: "Tips Official",
+      thumbnailUrl: "https://i.ytimg.com/vi/hPZcZpNn3KY/hqdefault.jpg",
+      duration: 229,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2026",
+      webpage_url: "https://www.youtube.com/watch?v=hPZcZpNn3KY",
+    },
+    {
+      id: "c3DD2NvjLII",
+      title: "Dil Tera Raha | Ariyan Khan | Rashmika Mandana",
+      uploader: "Prakash Jojawar",
+      thumbnailUrl: "https://i.ytimg.com/vi/c3DD2NvjLII/hqdefault.jpg",
+      duration: 280,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2026",
+      webpage_url: "https://www.youtube.com/watch?v=c3DD2NvjLII",
+    },
+  ],
+  "punjabi-beats": [
+    {
+      id: "vX2cDW8LUWk",
+      title: "Top Nonstop Punjabi Hits 2026",
+      uploader: "Speed Records",
+      thumbnailUrl: "https://i.ytimg.com/vi/vX2cDW8LUWk/hqdefault.jpg",
+      duration: 240,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2026",
+      webpage_url: "https://www.youtube.com/watch?v=vX2cDW8LUWk",
+    },
+  ],
+  "south-india": [
+    {
+      id: "J_d_Q3pTYcc",
+      title: "Trending South Indian Songs Mashup",
+      uploader: "Sony Music South",
+      thumbnailUrl: "https://i.ytimg.com/vi/J_d_Q3pTYcc/hqdefault.jpg",
+      duration: 310,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2026",
+      webpage_url: "https://www.youtube.com/watch?v=J_d_Q3pTYcc",
+    },
+  ],
+  "indian-indie": [
+    {
+      id: "FCRb4kjnRx4",
+      title: "Woh - Khatth ft. Sthiti",
+      uploader: "Khatth",
+      thumbnailUrl: "https://i.ytimg.com/vi/FCRb4kjnRx4/hqdefault.jpg",
+      duration: 215,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2026",
+      webpage_url: "https://www.youtube.com/watch?v=FCRb4kjnRx4",
+    },
+  ],
+  "love-and-chill": [
+    {
+      id: "y69Bj1h-_aA",
+      title: "Best of Arijit Singh & Jubin Nautiyal Romantic Mashup",
+      uploader: "VDJ Royal",
+      thumbnailUrl: "https://i.ytimg.com/vi/y69Bj1h-_aA/hqdefault.jpg",
+      duration: 320,
+      viewCount: null,
+      likeCount: null,
+      uploadDate: "2026",
+      webpage_url: "https://www.youtube.com/watch?v=y69Bj1h-_aA",
+    },
+  ],
+};
+
 let homeFeedCache: { expiresAt: number; value: HomeFeed } | null = null;
 
 export async function getHomeFeed(): Promise<HomeFeed> {
@@ -545,13 +663,21 @@ export async function getHomeFeed(): Promise<HomeFeed> {
   const sections = await Promise.all(
     HOME_SECTION_CONFIG.map(async (config): Promise<HomeSection> => {
       try {
+        const fetched = await searchTracks(config.query, 12);
+        const tracks =
+          fetched.length > 0
+            ? fetched
+            : FALLBACK_SECTION_TRACKS[config.id] || [];
         return {
           ...config,
-          tracks: await searchTracks(config.query, 12),
+          tracks,
         };
       } catch (err) {
         logger.warn({ err, section: config.id }, "Home recommendation section failed");
-        return { ...config, tracks: [] };
+        return {
+          ...config,
+          tracks: FALLBACK_SECTION_TRACKS[config.id] || [],
+        };
       }
     }),
   );
