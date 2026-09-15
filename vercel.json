@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "pnpm --filter @workspace/music-app run build",
-  "outputDirectory": "artifacts/music-app/dist/public",
+  "buildCommand": "pnpm run build:vercel",
+  "outputDirectory": "public",
   "framework": null,
   "rewrites": [
     {
