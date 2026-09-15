@@ -8,6 +8,7 @@ import HomePage from "@/pages/home";
 import SearchPage from "@/pages/search";
 import NowPlayingPage from "@/pages/now-playing";
 import PlaylistPage from "@/pages/playlist";
+import EndpointsPage from "@/pages/endpoints";
 import { PlayerProvider } from "@/context/player-context";
 
 const queryClient = new QueryClient();
@@ -17,6 +18,9 @@ function Router() {
     <Switch>
       <Route path="/" component={HomePage} />
       <Route path="/search" component={SearchPage} />
+      <Route path="/endpoints" component={EndpointsPage} />
+      <Route path="/api-docs" component={EndpointsPage} />
+      <Route path="/docs" component={EndpointsPage} />
       <Route path="/track/:videoId" component={NowPlayingPage} />
       <Route path="/playlist/:playlistId" component={PlaylistPage} />
       <Route component={NotFound} />

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Home, Search, Disc3, ListMusic } from "lucide-react";
+import { Home, Search, Disc3, ListMusic, Server } from "lucide-react";
 import { BottomPlayer } from "./BottomPlayer";
 import { usePlayer } from "@/context/player-context";
 
@@ -14,6 +14,7 @@ export function Layout({ children }: LayoutProps) {
   const navItems = [
     { href: "/", label: "Home", icon: Home },
     { href: "/search", label: "Search", icon: Search },
+    { href: "/endpoints", label: "API Endpoints", icon: Server },
   ];
 
   return (
