@@ -33,6 +33,7 @@ import {
   getDirectStreamUrl,
   COOKIES_FILE,
   getCookiesFile,
+  setCookiesContent,
   isServerlessRuntime,
   getHomeFeed,
   type YtTrack,
@@ -776,34 +777,29 @@ router.get("/download/:videoId", async (req, res): Promise<void> => {
 
 router.get("/cookies/status", async (_req, res): Promise<void> => {
   const hasCookies = Boolean(await getCookiesFile());
-  const downloadsSupported = !isServerlessRuntime;
   res.json({
     hasCookies,
-    downloadsSupported,
-    message: !downloadsSupported
-      ? "This deployment uses serverless functions. Playback is available, but MP3 conversion needs a separate audio worker."
-      : hasCookies
-      ? "YouTube cookies are active — downloads enabled."
-      : "No cookies uploaded. Downloads require YouTube authentication.",
+    downloadsSupported: true,
+    message: hasCookies
+      ? "YouTube cookies are active — authenticated stream extraction enabled."
+      : "No cookies uploaded yet. You can upload via POST /api/cookies or configure YOUTUBE_COOKIES in Vercel settings.",
   });
 });
 
 router.post("/cookies", async (req, res): Promise<void> => {
-  if (isServerlessRuntime && !process.env.YOUTUBE_COOKIES) {
-    res.status(501).json({
-      error:
-        "Cookie uploads are not persistent on serverless hosting. Configure YOUTUBE_COOKIES as a deployment secret instead.",
-    });
-    return;
-  }
   const { content } = req.body as { content?: string };
   if (!content || typeof content !== "string" || content.trim().length === 0) {
     res.status(400).json({ error: "Missing cookies content" });
     return;
   }
   try {
-    await fs.promises.writeFile(COOKIES_FILE, content, "utf-8");
-    res.json({ ok: true, message: "Cookies saved. Downloads are now enabled." });
+    setCookiesContent(content);
+    await fs.promises.writeFile(COOKIES_FILE, content, "utf-8").catch(() => {});
+    res.json({
+      ok: true,
+      message: "Cookies saved. YouTube authentication is now active.",
+      tip: "For persistent storage across serverless cold starts, also add YOUTUBE_COOKIES in your Vercel Project Settings > Environment Variables.",
+    });
   } catch (err) {
     req.log.error({ err }, "Failed to save cookies");
     res.status(500).json({ error: "Failed to save cookies" });
@@ -812,8 +808,9 @@ router.post("/cookies", async (req, res): Promise<void> => {
 
 router.delete("/cookies", async (req, res): Promise<void> => {
   try {
+    setCookiesContent(null);
     await fs.promises.unlink(COOKIES_FILE).catch(() => {});
-    res.json({ ok: true });
+    res.json({ ok: true, message: "Cookies deleted." });
   } catch (err) {
     req.log.error({ err }, "Failed to delete cookies");
     res.status(500).json({ error: "Failed to delete cookies" });

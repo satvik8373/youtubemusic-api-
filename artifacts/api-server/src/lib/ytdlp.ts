@@ -143,8 +143,14 @@ function runYtDlp(args: string[]): Promise<string> {
   });
 }
 
+let inMemoryCookies: string | null = null;
+
+export function setCookiesContent(content: string | null): void {
+  inMemoryCookies = content;
+}
+
 export async function getCookiesFile(): Promise<string | null> {
-  const configuredCookies = process.env.YOUTUBE_COOKIES?.trim();
+  const configuredCookies = process.env.YOUTUBE_COOKIES?.trim() || inMemoryCookies;
   if (configuredCookies) {
     const envCookiesFile = path.join(os.tmpdir(), "yt-cookies-env.txt");
     await fs.promises.writeFile(envCookiesFile, configuredCookies, "utf8");
