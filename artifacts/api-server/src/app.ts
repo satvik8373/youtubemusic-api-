@@ -41,19 +41,14 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Root overview / health endpoint for mobile apps and browsers
-const apiOverview = (req: express.Request, res: express.Response) => {
-  // If requested by a web browser, redirect to the rich interactive Endpoints Explorer UI
-  if (req.accepts("html") && !req.xhr && !req.headers["x-requested-with"]) {
-    res.redirect("/endpoints");
-    return;
-  }
+// Root overview / health endpoint
+const apiOverview = (_req: express.Request, res: express.Response) => {
   res.json({
     status: "ok",
     service: "Mavrixfy Music API Server",
     version: "2.0.0",
     docs: "Connected to YouTube Music & Mavrixfy mobile engine",
-    endpointsUi: "/endpoints",
+    endpointsUi: "https://youtubemusic-api.vercel.app/endpoints",
     endpoints: {
       search: "/api/search?query=:query (or ?q=:query)",
       searchSongs: "/api/search/songs?query=:query&limit=50",

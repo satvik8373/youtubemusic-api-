@@ -26,30 +26,71 @@ interface CachedStreamUrl {
 }
 const streamUrlCache = new Map<string, CachedStreamUrl>();
 
+// Public Invidious instances to try for audio stream URLs on serverless
+const INVIDIOUS_INSTANCES = [
+  "https://iv.datura.network",
+  "https://invidious.privacyredirect.com",
+  "https://invidious.nerdvpn.de",
+  "https://invidious.fdn.fr",
+  "https://yt.drgnz.club",
+];
+
+async function getInvidiousStreamUrl(videoId: string): Promise<string> {
+  for (const instance of INVIDIOUS_INSTANCES) {
+    try {
+      const resp = await fetch(`${instance}/api/v1/videos/${videoId}?fields=adaptiveFormats,formatStreams`, {
+        signal: AbortSignal.timeout(8000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; MavrixfyApp/2.0)" },
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json() as {
+        adaptiveFormats?: Array<{ type: string; url: string; bitrate?: string }>;
+        formatStreams?: Array<{ type: string; url: string }>;
+      };
+
+      // Prefer opus/webm adaptive audio (highest quality)
+      const adaptive = (data.adaptiveFormats || []).filter(f => f.type?.startsWith("audio/"));
+      const best = adaptive.sort((a, b) => Number(b.bitrate || 0) - Number(a.bitrate || 0))[0];
+      if (best?.url) return best.url;
+
+      // Fallback to muxed format streams
+      const stream = (data.formatStreams || [])[0];
+      if (stream?.url) return stream.url;
+    } catch {
+      // try next instance
+    }
+  }
+  throw new Error("All Invidious instances failed");
+}
+
 export async function getDirectStreamUrl(videoId: string, format = "bestaudio"): Promise<string> {
   const cacheKey = `${videoId}:${format}`;
   const cached = streamUrlCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.url;
 
-  const cookiesFile = await getCookiesFile();
+  let url: string;
 
-  const args = [
-    `https://www.youtube.com/watch?v=${videoId}`,
-    "-f",
-    format,
-    "--get-url",
-    "--no-warnings",
-    "--quiet",
-  ];
-  if (cookiesFile) {
-    args.push("--cookies", cookiesFile);
+  if (isServerlessRuntime) {
+    // On Vercel/serverless: use Invidious public API — no yt-dlp needed
+    url = await getInvidiousStreamUrl(videoId);
+  } else {
+    // Local dev: use yt-dlp directly
+    const cookiesFile = await getCookiesFile();
+    const args = [
+      `https://www.youtube.com/watch?v=${videoId}`,
+      "-f",
+      format,
+      "--get-url",
+      "--no-warnings",
+      "--quiet",
+    ];
+    if (cookiesFile) args.push("--cookies", cookiesFile);
+    const output = await runYtDlp(args);
+    url = output.trim().split("\n")[0];
+    if (!url || !url.startsWith("http")) throw new Error("No valid stream URL returned");
   }
 
-  const output = await runYtDlp(args);
-  const url = output.trim().split("\n")[0];
-  if (!url || !url.startsWith("http")) throw new Error("No valid stream URL returned");
-
-  streamUrlCache.set(cacheKey, { url, expiresAt: Date.now() + 60 * 60 * 1000 });
+  streamUrlCache.set(cacheKey, { url, expiresAt: Date.now() + 50 * 60 * 1000 });
   return url;
 }
 
