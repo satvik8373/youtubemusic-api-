@@ -1,13 +1,14 @@
 {
+  "framework": "vite",
   "buildCommand": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/music-app run build",
-  "outputDirectory": "artifacts/music-app/dist",
+  "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/api/(.*)",
+      "source": "/api/:path*",
       "destination": "/api/index.js"
     },
     {
-      "source": "/((?!api).*)",
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ],
