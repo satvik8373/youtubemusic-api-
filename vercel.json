@@ -1,4 +1,5 @@
 {
+  "framework": "vite",
   "buildCommand": "pnpm --filter @workspace/music-app run build",
   "outputDirectory": "dist",
   "rewrites": [

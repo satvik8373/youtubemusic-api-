@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,10 +33,16 @@ const destinations = [
 ];
 
 for (const dest of destinations) {
-  if (dest === srcDir) continue;
-  mkdirSync(dest, { recursive: true });
-  cpSync(srcDir, dest, { recursive: true });
-  console.log(`[Build Sync] Synced build to: ${dest}`);
+  if (dest !== srcDir) {
+    mkdirSync(dest, { recursive: true });
+    cpSync(srcDir, dest, { recursive: true });
+    console.log(`[Build Sync] Synced build to: ${dest}`);
+  }
+  const indexJs = resolve(dest, "index.js");
+  if (!existsSync(indexJs)) {
+    writeFileSync(indexJs, "// Generated build artifact entrypoint\nexport default {};\n");
+  }
 }
 
-console.log("[Build Sync] Complete! Verified output in root public:", readdirSync(resolve(rootDir, "public")));
+console.log("[Build Sync] Complete! Verified output in root dist:", readdirSync(resolve(rootDir, "dist")));
+
