@@ -6,13 +6,16 @@ import { logger } from "./logger";
 
 const YTDLP_BIN = process.env.YTDLP_BIN ?? "yt-dlp";
 export const COOKIES_FILE = path.join(os.tmpdir(), "yt-cookies.txt");
-const YOUTUBE_INNER_TUBE_URL =
-  "https://www.youtube.com/youtubei/v1";
+const YOUTUBE_INNER_TUBE_URL = "https://www.youtube.com/youtubei/v1";
+const YOUTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+
+// TVHTML5 client is the most reliable for unauthenticated search requests
 const YOUTUBE_CLIENT = {
-  clientName: "WEB",
-  clientVersion: "2.20250101.00.00",
+  clientName: "TVHTML5",
+  clientVersion: "7.20250101.12.00",
   hl: "en",
-  gl: "in",
+  gl: "IN",
+  utcOffsetMinutes: 330,
 };
 
 export const isServerlessRuntime =
@@ -216,33 +219,55 @@ async function youtubeInnerTubeRequest(
   body: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const response = await fetch(
-    `${YOUTUBE_INNER_TUBE_URL}/${endpoint}?prettyPrint=false`,
+    `${YOUTUBE_INNER_TUBE_URL}/${endpoint}?key=${YOUTUBE_API_KEY}&prettyPrint=false`,
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "User-Agent":
-          "Mozilla/5.0 (compatible; SonicMusic/1.0; +https://www.youtube.com)",
+        "User-Agent": "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 Chrome/90.0.4430.91 Mobile Safari/537.36",
+        "Origin": "https://www.youtube.com",
+        "X-YouTube-Client-Name": "7",
+        "X-YouTube-Client-Version": YOUTUBE_CLIENT.clientVersion,
+        "Accept-Language": "en-IN,en;q=0.9",
       },
       body: JSON.stringify({
         context: { client: YOUTUBE_CLIENT },
         ...body,
       }),
+      signal: AbortSignal.timeout(12000),
     },
   );
 
   if (!response.ok) {
-    throw new Error(`YouTube request failed: ${response.status}`);
+    throw new Error(`YouTube InnerTube request failed: ${response.status} ${response.statusText}`);
   }
   return (await response.json()) as Record<string, unknown>;
 }
 
 async function searchYouTube(query: string, limit: number): Promise<YtTrack[]> {
-  const data = await youtubeInnerTubeRequest("search", { query });
-  const videos = collectObjects(data, "videoRenderer")
-    .map(mapYouTubeVideo)
-    .filter((track): track is YtTrack => Boolean(track));
-  return videos.slice(0, limit);
+  const data = await youtubeInnerTubeRequest("search", { query, params: "EgIQAQ%3D%3D" });
+
+  // Try all possible renderer types YouTube might return
+  const rendererKeys = ["videoRenderer", "compactVideoRenderer", "musicVideoRenderer"];
+  const videos: YtTrack[] = [];
+
+  for (const key of rendererKeys) {
+    const found = collectObjects(data, key)
+      .map(mapYouTubeVideo)
+      .filter((track): track is YtTrack => Boolean(track));
+    videos.push(...found);
+    if (videos.length >= limit) break;
+  }
+
+  // Deduplicate by id
+  const seen = new Set<string>();
+  const unique = videos.filter((t) => {
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
+    return true;
+  });
+
+  return unique.slice(0, limit);
 }
 
 async function browseYouTubePlaylist(playlistId: string): Promise<YtPlaylist> {
