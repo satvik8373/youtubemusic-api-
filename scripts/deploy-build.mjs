@@ -8,9 +8,10 @@ const musicAppDir = resolve(rootDir, "artifacts/music-app");
 
 // The primary build output
 const sourceCandidates = [
+  resolve(rootDir, "dist"),
   resolve(rootDir, "public"),
-  resolve(musicAppDir, "dist/public"),
   resolve(musicAppDir, "dist"),
+  resolve(musicAppDir, "dist/public"),
   resolve(musicAppDir, "public"),
 ];
 
