@@ -1,18 +1,17 @@
 {
-  "framework": "vite",
   "buildCommand": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/music-app run build",
-  "outputDirectory": "dist",
+  "outputDirectory": "artifacts/music-app/dist",
   "rewrites": [
     {
-      "source": "/((?!api(?:/|$)).*)",
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/((?!api).*)",
       "destination": "/index.html"
     }
   ],
   "functions": {
-    "api/[...path].js": {
-      "maxDuration": 60,
-      "includeFiles": "artifacts/api-server/dist/**"
-    },
     "api/index.js": {
       "maxDuration": 60,
       "includeFiles": "artifacts/api-server/dist/**"
