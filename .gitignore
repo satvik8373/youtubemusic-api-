@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.audio_cache/
+/tmp/
+*.egg-info/
+.venv/
+venv/

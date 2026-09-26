@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ytmusic-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
+      # Uncomment to enable API key auth:
+      # - key: API_KEY
+      #   value: your-secret-key-here
+      # - key: ALLOWED_ORIGINS
+      #   value: https://yourapp.com
+    healthCheckPath: /healthz
