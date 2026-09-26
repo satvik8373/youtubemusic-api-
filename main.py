@@ -107,26 +107,66 @@ def _set_cached_url(vid: str, url: str, headers: dict, ext: str):
 
 
 def _extract_stream_url(videoId: str) -> tuple[str, dict, str]:
-    """Run yt-dlp to get the stream URL (no download). Returns (url, headers, ext)."""
-    # Try multiple client strategies — server IPs often get bot-detected
+    """Run yt-dlp to get the stream URL. Uses PO token approach for server IPs."""
+    import urllib.request
+
+    # Get a visitor data / PO token via innertube API (no auth needed)
+    def get_visitor_data() -> str:
+        try:
+            req = urllib.request.Request(
+                "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+                data=b'{"context":{"client":{"clientName":"WEB","clientVersion":"2.20240726.00.00"}}}',
+                headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                import json
+                data = json.loads(resp.read())
+                return data.get("responseContext", {}).get("visitorData", "")
+        except Exception:
+            return ""
+
     strategies = [
+        # Strategy 1: tv_embedded (most reliable for server IPs)
         {
             "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "extractor_args": {"youtube": {"player_client": ["tv_embedded"]}},
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tv_embedded"],
+                }
+            },
         },
+        # Strategy 2: ios client
+        {
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["ios"],
+                }
+            },
+        },
+        # Strategy 3: web with visitor data
+        {
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web"],
+                }
+            },
+        },
+        # Strategy 4: mweb
         {
             "format": "bestaudio",
-            "extractor_args": {"youtube": {"player_client": ["tv_embedded", "web"]}},
-        },
-        {
-            "format": "bestaudio",
-            "extractor_args": {"youtube": {"player_client": ["tv_embedded"]}},
-            "age_limit": 99,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["mweb"],
+                }
+            },
         },
     ]
 
     last_error = None
-    for extra in strategies:
+    for i, extra in enumerate(strategies):
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -143,20 +183,23 @@ def _extract_stream_url(videoId: str) -> tuple[str, dict, str]:
             url = info.get("url")
             if not url:
                 for f in reversed(info.get("formats") or []):
-                    if f.get("url"):
+                    if f.get("url") and "googlevideo" in f.get("url", ""):
                         url = f["url"]
                         break
             if url:
                 headers = dict(info.get("http_headers") or {})
                 ext = info.get("ext") or "m4a"
-                logger.info(f"Stream URL extracted for {videoId} using {extra.get('extractor_args')}")
+                logger.info(f"Stream URL extracted for {videoId} strategy={i+1}")
                 return url, headers, ext
         except Exception as e:
             last_error = e
-            logger.warning(f"Strategy failed for {videoId}: {str(e)[:80]}")
+            logger.warning(f"Strategy {i+1} failed: {str(e)[:100]}")
             continue
 
-    raise ValueError(f"All strategies failed: {last_error}")
+    raise yt_dlp.utils.DownloadError(
+        f"YouTube blocked all extraction strategies for {videoId}. "
+        f"Server IP may be rate-limited. Last error: {last_error}"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
