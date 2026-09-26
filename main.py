@@ -67,6 +67,10 @@ def safe_call(fn, *args, **kwargs):
         return result if result is not None else {}
     except Exception as e:
         logger.error(f"ytmusicapi error: {e}")
+        # Return empty instead of 500 for path-not-found errors
+        msg = str(e)
+        if "Unable to find" in msg or "KeyError" in msg:
+            return {}
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -110,6 +114,16 @@ def _extract_stream_url(videoId: str) -> tuple[str, dict, str]:
         "no_warnings": True,
         "noplaylist": True,
         "skip_download": True,
+        # Helps bypass bot detection on server IPs
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["tv_embedded", "web"],
+                "player_skip": ["webpage"],
+            }
+        },
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+        },
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(
