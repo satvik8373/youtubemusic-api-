@@ -108,39 +108,55 @@ def _set_cached_url(vid: str, url: str, headers: dict, ext: str):
 
 def _extract_stream_url(videoId: str) -> tuple[str, dict, str]:
     """Run yt-dlp to get the stream URL (no download). Returns (url, headers, ext)."""
-    ydl_opts = {
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "skip_download": True,
-        # Helps bypass bot detection on server IPs
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["tv_embedded", "web"],
-                "player_skip": ["webpage"],
-            }
+    # Try multiple client strategies — server IPs often get bot-detected
+    strategies = [
+        {
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "extractor_args": {"youtube": {"player_client": ["tv_embedded"]}},
         },
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+        {
+            "format": "bestaudio",
+            "extractor_args": {"youtube": {"player_client": ["tv_embedded", "web"]}},
         },
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(
-            f"https://www.youtube.com/watch?v={videoId}",
-            download=False,
-        )
-    url = info.get("url")
-    if not url:
-        for f in reversed(info.get("formats") or []):
-            if f.get("url"):
-                url = f["url"]
-                break
-    if not url:
-        raise ValueError("No stream URL found")
-    headers = dict(info.get("http_headers") or {})
-    ext = info.get("ext") or "m4a"
-    return url, headers, ext
+        {
+            "format": "bestaudio",
+            "extractor_args": {"youtube": {"player_client": ["tv_embedded"]}},
+            "age_limit": 99,
+        },
+    ]
+
+    last_error = None
+    for extra in strategies:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "skip_download": True,
+            **extra,
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={videoId}",
+                    download=False,
+                )
+            url = info.get("url")
+            if not url:
+                for f in reversed(info.get("formats") or []):
+                    if f.get("url"):
+                        url = f["url"]
+                        break
+            if url:
+                headers = dict(info.get("http_headers") or {})
+                ext = info.get("ext") or "m4a"
+                logger.info(f"Stream URL extracted for {videoId} using {extra.get('extractor_args')}")
+                return url, headers, ext
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Strategy failed for {videoId}: {str(e)[:80]}")
+            continue
+
+    raise ValueError(f"All strategies failed: {last_error}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
