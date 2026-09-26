@@ -107,67 +107,68 @@ def _set_cached_url(vid: str, url: str, headers: dict, ext: str):
 
 
 def _extract_stream_url(videoId: str) -> tuple[str, dict, str]:
-    """Run yt-dlp to get the stream URL. Uses PO token approach for server IPs."""
-    import urllib.request
+    """
+    Get audio stream URL using Piped API (open-source YouTube frontend).
+    Falls back to yt-dlp if Piped fails.
+    Piped works on cloud IPs without bot detection issues.
+    """
+    import urllib.request, json as _json
 
-    # Get a visitor data / PO token via innertube API (no auth needed)
-    def get_visitor_data() -> str:
+    # ── Strategy 1: Piped API (best for cloud servers) ────────────────────────
+    # Multiple public Piped instances for redundancy
+    piped_instances = [
+        "https://pipedapi.kavin.rocks",
+        "https://piped-api.garudalinux.org",
+        "https://api.piped.projectsegfau.lt",
+        "https://pipedapi.coldaccounts.net",
+    ]
+
+    for instance in piped_instances:
         try:
             req = urllib.request.Request(
-                "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
-                data=b'{"context":{"client":{"clientName":"WEB","clientVersion":"2.20240726.00.00"}}}',
-                headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
-                method="POST",
+                f"{instance}/streams/{videoId}",
+                headers={"User-Agent": "Mozilla/5.0"},
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                import json
-                data = json.loads(resp.read())
-                return data.get("responseContext", {}).get("visitorData", "")
-        except Exception:
-            return ""
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = _json.loads(resp.read())
 
+            # Pick best audio stream
+            audio_streams = data.get("audioStreams") or []
+            # Prefer m4a/mp4a, then opus/webm, then anything
+            best = None
+            for fmt in ["audio/mp4", "audio/webm"]:
+                for s in audio_streams:
+                    if fmt in s.get("mimeType", "") and (
+                        best is None or s.get("bitrate", 0) > best.get("bitrate", 0)
+                    ):
+                        best = s
+
+            if not best and audio_streams:
+                best = max(audio_streams, key=lambda s: s.get("bitrate", 0))
+
+            if best and best.get("url"):
+                url = best["url"]
+                mime = best.get("mimeType", "audio/mp4")
+                ext = "webm" if "webm" in mime else "m4a"
+                logger.info(f"Piped API success for {videoId} via {instance}")
+                return url, {}, ext
+
+        except Exception as e:
+            logger.warning(f"Piped {instance} failed: {str(e)[:60]}")
+            continue
+
+    # ── Strategy 2: yt-dlp fallback ───────────────────────────────────────────
+    logger.info(f"Falling back to yt-dlp for {videoId}")
     strategies = [
-        # Strategy 1: tv_embedded (most reliable for server IPs)
-        {
-            "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["tv_embedded"],
-                }
-            },
-        },
-        # Strategy 2: ios client
-        {
-            "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["ios"],
-                }
-            },
-        },
-        # Strategy 3: web with visitor data
-        {
-            "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["web"],
-                }
-            },
-        },
-        # Strategy 4: mweb
-        {
-            "format": "bestaudio",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["mweb"],
-                }
-            },
-        },
+        {"extractor_args": {"youtube": {"player_client": ["tv_embedded"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["ios"]}}},
+        {"extractor_args": {"youtube": {"player_client": ["web"]}}},
     ]
 
     last_error = None
-    for i, extra in enumerate(strategies):
+    for extra in strategies:
         ydl_opts = {
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
@@ -187,18 +188,13 @@ def _extract_stream_url(videoId: str) -> tuple[str, dict, str]:
                         url = f["url"]
                         break
             if url:
-                headers = dict(info.get("http_headers") or {})
-                ext = info.get("ext") or "m4a"
-                logger.info(f"Stream URL extracted for {videoId} strategy={i+1}")
-                return url, headers, ext
+                return url, dict(info.get("http_headers") or {}), info.get("ext") or "m4a"
         except Exception as e:
             last_error = e
-            logger.warning(f"Strategy {i+1} failed: {str(e)[:100]}")
             continue
 
     raise yt_dlp.utils.DownloadError(
-        f"YouTube blocked all extraction strategies for {videoId}. "
-        f"Server IP may be rate-limited. Last error: {last_error}"
+        f"All sources failed for {videoId}. Last error: {last_error}"
     )
 
 
@@ -380,6 +376,156 @@ async def get_stream(videoId: str, request: Request):
 
     return RedirectResponse(url=stream_url, status_code=302,
                             headers={"Access-Control-Allow-Origin": "*"})
+
+
+# ── /api/music/* routes (Mavrixfy React Native app compatibility) ──────────────
+# App calls: /api/music/home, /api/music/search, /api/music/stream/:id etc.
+
+@app.get("/api/music/home", tags=["mobile"], dependencies=[Depends(verify_key)])
+def mobile_home(limit: int = Query(default=5, ge=1, le=10)):
+    """Home shelves formatted for Mavrixfy app."""
+    result = safe_call(yt.get_home, limit=limit)
+    if not isinstance(result, list):
+        return {"sections": []}
+    sections = []
+    for shelf in result:
+        if not isinstance(shelf, dict):
+            continue
+        items = []
+        for content in (shelf.get("contents") or []):
+            if not isinstance(content, dict):
+                continue
+            video_id = content.get("videoId") or content.get("browseId") or ""
+            # Only include items with a proper videoId (11 chars)
+            if not video_id or len(video_id) != 11:
+                continue
+            thumbs = content.get("thumbnails") or []
+            items.append({
+                "videoId": video_id,
+                "title": content.get("title", ""),
+                "artists": [{"name": content.get("artists", [{}])[0].get("name", "") if content.get("artists") else ""}],
+                "album": {"name": content.get("album", {}).get("name", "") if content.get("album") else ""},
+                "thumbnails": thumbs,
+                "duration": content.get("duration_seconds") or 0,
+            })
+        if items:
+            sections.append({"title": shelf.get("title", ""), "items": items})
+    return {"sections": sections}
+
+
+@app.get("/api/music/search", tags=["mobile"], dependencies=[Depends(verify_key)])
+def mobile_search(q: str, limit: int = Query(default=20, ge=1, le=50)):
+    """Search formatted for Mavrixfy app."""
+    results = safe_call(yt.search, q, filter="songs", limit=limit)
+    if not isinstance(results, list):
+        return {"results": []}
+    items = []
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        video_id = r.get("videoId", "")
+        if not video_id or len(video_id) != 11:
+            continue
+        thumbs = r.get("thumbnails") or []
+        artists = r.get("artists") or []
+        items.append({
+            "videoId": video_id,
+            "title": r.get("title", ""),
+            "artists": [{"name": a.get("name", "")} for a in artists] if artists else [],
+            "album": {"name": r.get("album", {}).get("name", "") if r.get("album") else ""},
+            "thumbnails": thumbs,
+            "duration": r.get("duration_seconds") or 0,
+            "isExplicit": r.get("isExplicit", False),
+        })
+    return {"results": items}
+
+
+@app.get("/api/music/suggestions", tags=["mobile"], dependencies=[Depends(verify_key)])
+def mobile_suggestions(q: str):
+    """Search suggestions for Mavrixfy app."""
+    result = safe_call(yt.get_search_suggestions, q)
+    suggestions = []
+    if isinstance(result, list):
+        for item in result:
+            if isinstance(item, str):
+                suggestions.append(item)
+            elif isinstance(item, dict):
+                suggestions.append(item.get("query") or item.get("text") or "")
+    return {"suggestions": [s for s in suggestions if s]}
+
+
+@app.get("/api/music/song/{videoId}", tags=["mobile"], dependencies=[Depends(verify_key)])
+def mobile_song(videoId: str):
+    """Song metadata for Mavrixfy app."""
+    result = safe_call(yt.get_song, videoId)
+    details = result.get("videoDetails", {}) if isinstance(result, dict) else {}
+    if not details:
+        return {}
+    thumbs = details.get("thumbnail", {}).get("thumbnails", []) if details.get("thumbnail") else []
+    return {
+        "videoId": details.get("videoId", videoId),
+        "title": details.get("title", ""),
+        "artists": [{"name": details.get("author", "")}],
+        "thumbnails": thumbs,
+        "duration": int(details.get("lengthSeconds") or 0),
+    }
+
+
+@app.get("/api/music/playlist/{playlistId}", tags=["mobile"], dependencies=[Depends(verify_key)])
+def mobile_playlist(playlistId: str):
+    """Playlist tracks for Mavrixfy app."""
+    result = safe_call(yt.get_playlist, playlistId, limit=100)
+    if not isinstance(result, dict):
+        return {"title": "", "tracks": []}
+    raw_tracks = result.get("tracks") or []
+    tracks = []
+    for t in raw_tracks:
+        if not isinstance(t, dict):
+            continue
+        video_id = t.get("videoId", "")
+        if not video_id or len(video_id) != 11:
+            continue
+        artists = t.get("artists") or []
+        thumbs = t.get("thumbnails") or []
+        tracks.append({
+            "videoId": video_id,
+            "title": t.get("title", ""),
+            "artists": [{"name": a.get("name", "")} for a in artists] if artists else [],
+            "album": {"name": t.get("album", {}).get("name", "") if t.get("album") else ""},
+            "thumbnails": thumbs,
+            "duration": t.get("duration_seconds") or 0,
+        })
+    return {"title": result.get("title", ""), "tracks": tracks}
+
+
+@app.get("/api/music/stream/{videoId}", tags=["mobile"], dependencies=[Depends(verify_key)])
+async def mobile_stream(videoId: str, request: Request):
+    """
+    Audio stream for Mavrixfy app.
+    Returns JSON with direct CDN URL — client streams directly from YouTube CDN.
+    Response: { url, ext, mimeType }
+    """
+    stream_url, _, ext = _get_cached_url(videoId)
+    if not stream_url:
+        logger.info(f"[mobile] Extracting URL: {videoId}")
+        try:
+            stream_url, headers, ext = await asyncio.get_event_loop().run_in_executor(
+                None, _extract_stream_url, videoId
+            )
+            _set_cached_url(videoId, stream_url, headers, ext)
+        except yt_dlp.utils.DownloadError as e:
+            logger.error(f"[mobile] yt-dlp {videoId}: {e}")
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            logger.error(f"[mobile] extract {videoId}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # React Native TrackPlayer needs the URL — return as JSON
+    return JSONResponse({
+        "url": stream_url,
+        "ext": ext,
+        "mimeType": f"audio/{ext}",
+    })
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
